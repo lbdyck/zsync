@@ -59,3 +59,4 @@ provided the user will be prompted for them.
         once            process and then exit
         only            allowed with either other option and only
                         display delt members
+        quick           exit if nothing to process

@@ -1,180 +1,197 @@
-/* --------------------  rexx procedure  -------------------- */
- zver = '2.7'
-/* Name:      zSync                                           |
- |                                                            |
- | Function:  Copy New and Updated PDS members based on       |
- |            ISPF statistics from a source library to        |
- |            a target library.                               |
- |                                                            |
- |            Only PDS/PDSE libraries that are RECFM          |
- |            F or V (blocked or unblocked) are supported.    |
- |                                                            |
- |            The successful copy information will be         |
- |            written to the ISPF Log.                        |
- |                                                            |
- | Commands:                                                  |
- |           COPY    - Copy all members that are different or |
- |                     don't exist in the target              |
- |                   - COPY non-blank will simulate copy      |
- |           LOCATE  - Locate member-name (partial accepted)  |
- |           ONLY    - Display only those members that are    |
- |                     copy eligible                          |
- |           REFRESH - Rebuild the display of ALL members     |
- |                     after using ONLY                       |
- |           SAVE    - Generate a report of the state of both |
- |                     From and To members (limited by Only)  |
- |           SORT    - Sort member or state                   |
- |                     syntax: sort member/state a/d          |
- |                     a = ascending (default) d = descending |
- |           ZSwap   - Refresh and swap the dataset names     |
- |                                                            |
- | Line Selections:                                           |
- |           B       - Browse From member                     |
- |           BT      - Browse To member                       |
- |           C       - Compare using ISPF Edit Compare        |
- |           CD      - Compare using SuperC                   |
- |           CS      - Compare using SuperC and View Results  |
- |           E       - Edit from member                       |
- |           ET      - Edit to member                         |
- |           I       - Display From/To ISPF Stats             |
- |           S or /  - Prompt for Selection                   |
- |           X       - Remove member from the table           |
- |           Z       - Copy the selected member               |
- |                                                            |
- | Syntax:    %zSync from to member-pattern \ opt             |
- |                                                            |
- |            from            source pds                      |
- |            to              target pds                      |
- |            member-pattern  member name or pattern          |
- |                            (defaults to all)               |
- |            \               indicates options follow        |
- |            opt             a valid option                  |
- |                                                            |
- |            valid options:                                  |
- |                                                            |
- |            all             ignore ispf stats and do        |
- |                            a compare on all members        |
- |            once            process and then exit           |
- |            only            allowed with either other       |
- |                            option and only display delta   |
- |                            members                         |
- |                                                            |
- | Usage Notes:                                               |
- |            1. Newer date wins                              |
- |            2. Date in source and not in target wins        |
- |            3. Member in source but not in target wins      |
- |            4. ISPF services are used for stats and copy    |
- |            5. ALL ISPF Panels and messages are inline      |
- |               in this exec along with a rexx ispf edit     |
- |               macro. These are dynamically loaded, and     |
- |               removed using the loadispf subroutine.       |
- |                                                            |
- | Author:    Lionel B. Dyck                                  |
- |                                                            |
- | History:  (most recent on top)                             |
- |            05/21/19 - Version 2.7                          |
- |                     - Align tutorial                       |
- |            03/13/19 - Version 2.6                          |
- |                     - Adjust Addpop Row/Column             |
- |            02/15/19 - Version 2.5                          |
- |                     - Correct non-stats compare test       |
- |                     - Add LMFree for superc                |
- |            08/03/18 - Version 2.4                          |
- |                     - Correct loop with zswap and 0 elig   |
- |            08/03/18 - Version 2.3                          |
- |                     - Add filter to selection display      |
- |            02/05/18 - Version 2.2                          |
- |                     - Correct truncation warning           |
- |            01/30/18 - Version 2.1                          |
- |                     - Add only option                      |
- |            01/04/18 - Version 2.0                          |
- |                     - Add option all                       |
- |            01/04/18 - Version 1.9                          |
- |                     - Add option once                      |
- |            10/24/17 - Version 1.8                          |
- |                     - Honor if just frompds is passed      |
- |            09/13/17 - Version 1.7                          |
- |                     - Correct if member name only used     |
- |            06/23/17 - Version 1.6                          |
- |                     - Correct Save report dates            |
- |            06/23/17 - Version 1.5                          |
- |                     - Save from and to dsnames in ispf     |
- |                       profile (moved from the panel)       |
- |            06/23/17 - Version 1.4                          |
- |                     - Correction to date used for compare  |
- |            06/22/17 - Version 1.3                          |
- |                     - Add Save option to generate report   |
- |                     - Compare Mod date instead of Create   |
- |                       date                                 |
- |            06/21/17 - Version 1.2                          |
- |                     - Update for 4 digit year              |
- |            06/12/17 - Version 1.1                          |
- |                     - Change tutorial for ZSWAP to ZSwap   |
- |            06/06/17 - Version 1.1                          |
- |                     - Add Locate for partial member name   |
- |            06/06/17 - Version 1.0                          |
- |                     - Add Locate for partial member name   |
- |            06/05/17 - Version 0.9                          |
- |                     - Correct for multiple member sels     |
- |            06/05/17 - Add version (0.8)                    |
- |                     - Remove StemEdit and use View         |
- |            05/31/17 - Return to Prompt before final exit   |
- |                     - Add Progress display                 |
- |                     - Add Z option to copy member          |
- |                     - Correct ftime/ttime check            |
- |            05/30/17 - Remove Check as a command            |
- |                       and run it automatically.            |
- |                     - Add TRUNC to the LMCOPY              |
- |                     - Change Delta/Identical messages      |
- |                       for check processing.                |
- |                     - Add member pattern                   |
- |                     - Add Locate                           |
- |            05/27/17 - Add Check and sort order             |
- |                     - Change name from zClone to zSync     |
- |            05/26/17 - Add CD line command                  |
- |                     - fix / to work                        |
- |                     - Change C to change state             |
- |            05/25/17 - Make stats field scrollable (l/r)    |
- |                     - Clean up some code illogic           |
- |            05/25/17 - Add ISPF Stats                       |
- |                     - Remove BF option (redundant)         |
- |                     - Add initial message count            |
- |                     - Add Copy simulation                  |
- |            05/24/17 - More updates                         |
- |            05/23/17 - More updates                         |
- |            05/22/17 - Major updates                        |
- |            05/10/17 - Make it work                         |
- |            05/09/17 - Creation                             |
- |                                                            |
- * ---------------------------------------------------------- */
+  /* --------------------  rexx procedure  -------------------- */
+  zver = '3.1'
+  /* Name:      zSync                                           |
+  |                                                            |
+  | Function:  Copy New and Updated PDS members based on       |
+  |            ISPF statistics from a source library to        |
+  |            a target library.                               |
+  |                                                            |
+  |            Only PDS/PDSE libraries are supported,          |
+  |            ioncluding load libraries.                      |
+  |                                                            |
+  |            The successful copy information will be         |
+  |            written to the ISPF Log.                        |
+  |                                                            |
+  | Commands:                                                  |
+  |           COPY    - Copy all members that are different or |
+  |                     don't exist in the target              |
+  |                   - COPY non-blank will simulate copy      |
+  |           FLIP    - Alias of ZSWAP                         |
+  |           LOCATE  - Locate member-name (partial accepted)  |
+  |           ONLY    - Display only those members that are    |
+  |                     copy eligible                          |
+  |           REFRESH - Rebuild the display of ALL members     |
+  |                     after using ONLY                       |
+  |           SAVE    - Generate a report of the state of both |
+  |                     From and To members (limited by Only)  |
+  |           SORT    - Sort member or state                   |
+  |                     syntax: sort member/state a/d          |
+  |                     a = ascending (default) d = descending |
+  |           ZSwap   - Refresh and swap the dataset names     |
+  |                                                            |
+  | Line Selections:                                           |
+  |           B       - Browse From member                     |
+  |           BT      - Browse To member                       |
+  |           C       - Compare using ISPF Edit Compare        |
+  |                     converted to CS if RECFM=U             |
+  |           CD      - Compare using SuperC                   |
+  |           CS      - Compare using SuperC and View Results  |
+  |           E       - Edit from member                       |
+  |           ET      - Edit to member                         |
+  |           I       - Display From/To ISPF Stats             |
+  |           S or /  - Prompt for Selection                   |
+  |           X       - Remove member from the table           |
+  |           Z       - Copy the selected member               |
+  |                                                            |
+  | Syntax:    %zSync from to member-pattern \ opt             |
+  |                                                            |
+  |            from            source pds                      |
+  |            to              target pds                      |
+  |            member-pattern  member name or pattern          |
+  |                            (defaults to all)               |
+  |            \               indicates options follow        |
+  |            opt             a valid option                  |
+  |                                                            |
+  |            valid options:                                  |
+  |                                                            |
+  |            all             ignore ispf stats and do        |
+  |                            a compare on all members        |
+  |                            using SuperC                    |
+  |            once            process and then exit           |
+  |            only            allowed with either other       |
+  |                            option and only display delta   |
+  |                            members                         |
+  |            quick           exit if nothing to do           |
+  |                                                            |
+  | Usage Notes:                                               |
+  |            1. Newer date wins                              |
+  |            2. Date in source and not in target wins        |
+  |            3. Member in source but not in target wins      |
+  |            4. ISPF services are used for stats and copy    |
+  |            5. ALL ISPF Panels and messages are inline      |
+  |               in this exec along with a rexx ispf edit     |
+  |               macro. These are dynamically loaded, and     |
+  |               removed using the loadispf subroutine.       |
+  |                                                            |
+  | Author:    Lionel B. Dyck                                  |
+  |                                                            |
+  | History:  (most recent on top)                             |
+  |            07/01/20 - Version 3.1                          |
+  |                     - Add FLIP as alias of zswap           |
+  |                     - Use SuperC if ALL option or          |
+  |                       RECFM=U                              |
+  |                     - Much cleanup                         |
+  |            05/02/20 - Version 3.0                          |
+  |                     - Add quick option                     |
+  |            03/14/20 - Version 2.9                          |
+  |                     - Check for 0 members in target        |
+  |            07/11/19 - Version 2.8                          |
+  |                     - Check ISPF Stats for 0 records       |
+  |            05/21/19 - Version 2.7                          |
+  |                     - Align tutorial                       |
+  |            03/13/19 - Version 2.6                          |
+  |                     - Adjust Addpop Row/Column             |
+  |            02/15/19 - Version 2.5                          |
+  |                     - Correct non-stats compare test       |
+  |                     - Add LMFree for superc                |
+  |            08/03/18 - Version 2.4                          |
+  |                     - Correct loop with zswap and 0 elig   |
+  |            08/03/18 - Version 2.3                          |
+  |                     - Add filter to selection display      |
+  |            02/05/18 - Version 2.2                          |
+  |                     - Correct truncation warning           |
+  |            01/30/18 - Version 2.1                          |
+  |                     - Add only option                      |
+  |            01/04/18 - Version 2.0                          |
+  |                     - Add option all                       |
+  |            01/04/18 - Version 1.9                          |
+  |                     - Add option once                      |
+  |            10/24/17 - Version 1.8                          |
+  |                     - Honor if just frompds is passed      |
+  |            09/13/17 - Version 1.7                          |
+  |                     - Correct if member name only used     |
+  |            06/23/17 - Version 1.6                          |
+  |                     - Correct Save report dates            |
+  |            06/23/17 - Version 1.5                          |
+  |                     - Save from and to dsnames in ispf     |
+  |                       profile (moved from the panel)       |
+  |            06/23/17 - Version 1.4                          |
+  |                     - Correction to date used for compare  |
+  |            06/22/17 - Version 1.3                          |
+  |                     - Add Save option to generate report   |
+  |                     - Compare Mod date instead of Create   |
+  |                       date                                 |
+  |            06/21/17 - Version 1.2                          |
+  |                     - Update for 4 digit year              |
+  |            06/12/17 - Version 1.1                          |
+  |                     - Change tutorial for ZSWAP to ZSwap   |
+  |            06/06/17 - Version 1.1                          |
+  |                     - Add Locate for partial member name   |
+  |            06/06/17 - Version 1.0                          |
+  |                     - Add Locate for partial member name   |
+  |            06/05/17 - Version 0.9                          |
+  |                     - Correct for multiple member sels     |
+  |            06/05/17 - Add version (0.8)                    |
+  |                     - Remove StemEdit and use View         |
+  |            05/31/17 - Return to Prompt before final exit   |
+  |                     - Add Progress display                 |
+  |                     - Add Z option to copy member          |
+  |                     - Correct ftime/ttime check            |
+  |            05/30/17 - Remove Check as a command            |
+  |                       and run it automatically.            |
+  |                     - Add TRUNC to the LMCOPY              |
+  |                     - Change Delta/Identical messages      |
+  |                       for check processing.                |
+  |                     - Add member pattern                   |
+  |                     - Add Locate                           |
+  |            05/27/17 - Add Check and sort order             |
+  |                     - Change name from zClone to zSync     |
+  |            05/26/17 - Add CD line command                  |
+  |                     - fix / to work                        |
+  |                     - Change C to change state             |
+  |            05/25/17 - Make stats field scrollable (l/r)    |
+  |                     - Clean up some code illogic           |
+  |            05/25/17 - Add ISPF Stats                       |
+  |                     - Remove BF option (redundant)         |
+  |                     - Add initial message count            |
+  |                     - Add Copy simulation                  |
+  |            05/24/17 - More updates                         |
+  |            05/23/17 - More updates                         |
+  |            05/22/17 - Major updates                        |
+  |            05/10/17 - Make it work                         |
+  |            05/09/17 - Creation                             |
+  |                                                            |
+  * ---------------------------------------------------------- */
 
-/* ------------------------------------- *
- | Get the From and To PDS dataset names |
- * ------------------------------------- */
+  /* ------------------------------------- *
+  | Get the From and To PDS dataset names |
+  * ------------------------------------- */
   arg frompds topds mempat '\' opt
 
-/* ------------------------------- *
- | Process option for ignore_stats |
- * ------------------------------- */
- if wordpos('ALL',opt) > 0 then ignore_stats = 1
-                           else ignore_stats = 0
+  /* ------------------------------- *
+  | Process option for ignore_stats |
+  * ------------------------------- */
+  if wordpos('ALL',opt) > 0 then ignore_stats = 1
+  else ignore_stats = 0
 
-/* ------------------- *
- | Define our defaults |
- * ------------------- */
+  /* ------------------- *
+  | Define our defaults |
+  * ------------------- */
   parse value '' with null flrecl tlrecl trwarn redo ,
-                      hold_sel zcmd
+    hold_sel zcmd
   zerrhm   = '#zs'
   zerralrm = 'NO'
   stats    = 'cp'random(999)
+  count    = 0
   Address ISPEXEC
   load_info = loadispf()
   'vput (frompds topds) profile'
+  'Control Errors Return'
 
-/* --------------------------------------- *
- | Check for From and To PDS Dataset Names |
- * --------------------------------------- */
- Check_dsns:
+  /* --------------------------------------- *
+  | Check for From and To PDS Dataset Names |
+  * --------------------------------------- */
+Check_dsns:
   dsnfok = 0;dsntok = 0
   if redo    /= null then call prompt
   if frompds =  null then call prompt
@@ -197,263 +214,351 @@
   dsntok = 1
   if (dsnfok + dsntok) /= 2 then call check_dsns
 
-/* ----------------------------------------------------- *
- | Verify that the FromPDS and ToPDS are supported by    |
- | LMMLIST. No VSAM, No Sequential, only RECFM F or V.   |
- * ----------------------------------------------------- */
- call listdsi frompds
- from_lrecl = syslrecl
- from_recfm = sysrecfm
- if pos(left(sysrecfm,1),'FV') = 0 then do
+  /* ----------------------------------------------------- *
+  | Verify that the FromPDS and ToPDS are supported by    |
+  | LMMLIST. No VSAM, No Sequential, only RECFM F or V.   |
+  | If RECFM = U then set ignore_stats = 1                |
+  * ----------------------------------------------------- */
+  call listdsi frompds
+  from_lrecl = syslrecl
+  from_recfm = sysrecfm
+  if sysrecfm = 'U' then ignore_stats = 1
+  if pos(left(sysrecfm,1),'FVU') = 0 then do
     zerrsm   = 'FromPDS Error'
     zerrlm   = frompds 'Invalid RECFM'
     'Setmsg Msg(isrz002)'
     call prompt
-    end
- if sysdsorg /= 'PO' then do
+  end
+  if sysdsorg /= 'PO' then do
     zerrsm   = 'FromPDS Error'
     zerrlm   = frompds 'Invalid DSORG - not PO'
     'Setmsg Msg(isrz002)'
     call prompt
-    end
- call listdsi topds
- to_lrecl = syslrecl
- to_recfm = sysrecfm
- if pos(left(sysrecfm,1),'FV') = 0 then do
+  end
+
+  x = listdsi(topds 'DIR')
+  to_lrecl = syslrecl
+  to_recfm = sysrecfm
+  if sysrecfm = 'U' then ignore_stats = 1
+  to_members = sysmembers
+  if pos(left(sysrecfm,1),'FUV') = 0 then do
     zerrsm   = 'ToPDS Error'
     zerrlm   = topds 'Invalid RECFM'
     'Setmsg Msg(isrz002)'
     call prompt
-    end
- if sysdsorg /= 'PO' then do
+  end
+  if sysdsorg /= 'PO' then do
     zerrsm   = 'ToPDS Error'
     zerrlm   = topds 'Invalid DSORG - not PO'
     'Setmsg Msg(isrz002)'
     call prompt
-    end
+  end
 
- if from_lrecl > to_lrecl then do
+  if from_lrecl > to_lrecl then do
     flrecl = 'From DCB:' from_recfm from_lrecl
     tlrecl = 'To DCB:  ' to_recfm to_lrecl
     trwarn = 'Truncation Warning'
-    end
+  end
 
-/* --------------------------------- *
- | Restart here if refresh requested |
- * --------------------------------- */
-  Refresh:
+  /* --------------------------------- *
+  | Restart here if refresh requested |
+  * --------------------------------- */
+Refresh:
   parse value '' with frommems tomems mem to. from. zcmd
- 'vput (frompds topds) profile'
-/* ------------------ *
- | Create stats table |
- * ------------------ */
+  'vput (frompds topds) profile'
+  /* ------------------ *
+  | Create stats table |
+  * ------------------ */
   'tbcreate' stats 'keys(mem) names(cr crf)'
 
-/* ------------------------------------- *
- | Now check for New and Updated Members |
- * ------------------------------------- */
+  /* ------------------------------------- *
+  | Now check for New and Updated Members |
+  * ------------------------------------- */
 
-/* ---------------- *
- | Progress Display |
- * ---------------- */
- progress = 'Getting ISPF Stats from From PDS Members:'
- progdsn  = frompds
- 'Control Display Lock'
- 'Addpop row(2) column(5)'
- 'Display Panel(zsynprog)'
- 'Rempop'
+  /* -------------------------------- *
+  | LMInit the From and To Libraries |
+  * -------------------------------- */
+  "LMINIT DATAID(fromid) DATASET("frompds")"
+  "LMINIT DATAID(toid) DATASET("topds")"
 
-/* -------------------------- *
- | Get stats for the FROM PDS |
- * -------------------------- */
- member = null
- if mempat /= null
+  /* ---------------- *
+  | Progress Display |
+  * ---------------- */
+  if ignore_stats = 0 then do
+    progress = 'Getting ISPF Stats from From PDS Members:'
+    progdsn  = frompds
+    'Control Display Lock'
+    'Addpop row(2) column(5)'
+    'Display Panel(zsynprog)'
+    'Rempop'
+
+    /* -------------------------- *
+    | Get stats for the FROM PDS |
+    * -------------------------- */
+    member = null
+    if mempat /= null
     then pattern = 'pattern('mempat')'
     else pattern = 'member('mempat')'
-  "LMINIT DATAID(fromid) DATASET("frompds")"
-  "LMOPEN DATAID("fromid") OPTION(INPUT)"
-  do forever
-    "LMMLIST Dataid("fromid") OPTION(LIST) MEMBER(MEMBER)" ,
-      "STATS(YES)" pattern
-    if rc > 3 then leave
-    member = strip(member)
-    frommems = frommems member
-    from.member = zlm4date zlmtime ,
-                  zlc4date zlvers zlmod zlcnorc zlinorc zlmnorc zluser
+    "LMOPEN DATAID("fromid") OPTION(INPUT)"
+    do forever
+      "LMMLIST Dataid("fromid") OPTION(LIST) MEMBER(MEMBER)" ,
+        "STATS(YES)" pattern
+      if rc > 3 then leave
+      member = strip(member)
+      frommems = frommems member
+      from.member = zlm4date zlmtime ,
+        zlc4date zlvers zlmod zlcnorc zlinorc zlmnorc zluser
+    end
+    "LMClose Dataid("fromid")"
+
+    /* -------------------------------------------------- *
+    | Setup for To PDS and get ISPF stats if members > 0 |
+    * -------------------------------------------------- */
+    if to_members > 0 then do
+
+      /* --------------- *
+      | Progress update |
+      * --------------- */
+      progress = 'Getting ISPF Stats from To PDS Members:'
+      progdsn  = topds
+      'Control Display Lock'
+      'Addpop row(2) column(5)'
+      'Display Panel(zsynprog)'
+      'Rempop'
+
+      /* ------------------------ *
+      | Get stats for the TO PDS |
+      * ------------------------ */
+      member = null
+      "LMOPEN DATAID("toid") OPTION(INPUT)"
+      do forever
+        "LMMLIST Dataid("toid") OPTION(LIST) MEMBER(MEMBER)" ,
+          "STATS(YES)"
+        if rc > 7 then leave
+        member = strip(member)
+        tomems = tomems member
+        to.member = zlm4date zlmtime ,
+          zlc4date  zlvers zlmod zlcnorc zlinorc zlmnorc zluser
+      end
+      "LMClose Dataid("toid")"
+    end
   end
-  "LMClose Dataid("fromid")"
 
-/* --------------- *
- | Progress update |
- * --------------- */
- progress = 'Getting ISPF Stats from To PDS Members:'
- progdsn  = topds
- 'Control Display Lock'
- 'Addpop row(2) column(5)'
- 'Display Panel(zsynprog)'
- 'Rempop'
+  /* ----------------------------- *
+  | Now compare and do the copies |
+  * ----------------------------- */
+  /* --------------- *
+  | Progress update |
+  * --------------- */
+  progress = 'Comparing ISPF Stats and Members'
+  if ignore_stats = 1 then
+  progress = 'Comparing Members while Ignoring ISPF Stats'
+  progdsn  = null
+  'Control Display Lock'
+  'Addpop row(2) column(5)'
+  'Display Panel(zsynprog)'
+  'Rempop'
 
-/* ------------------------ *
- | Get stats for the TO PDS |
- * ------------------------ */
-  member = null
-  "LMINIT DATAID(toid) DATASET("topds")"
-  "LMOPEN DATAID("toid") OPTION(INPUT)"
-  do forever
-    "LMMLIST Dataid("toid") OPTION(LIST) MEMBER(MEMBER)" ,
-      "STATS(YES)"
-    if rc > 7 then leave
-    member = strip(member)
-    tomems = tomems member
-    to.member = zlm4date zlmtime ,
-                zlc4date  zlvers zlmod zlcnorc zlinorc zlmnorc zluser
-  end
-  "LMClose Dataid("toid")"
-
-/* ----------------------------- *
- | Now compare and do the copies |
- * ----------------------------- */
-/* --------------- *
- | Progress update |
- * --------------- */
- progress = 'Comparing ISPF Stats and Members'
- if ignore_stats = 1 then
-    progress = 'Comparing Members while Ignoring ISPF Stats'
- progdsn  = null
- 'Control Display Lock'
- 'Addpop row(2) column(5)'
- 'Display Panel(zsynprog)'
- 'Rempop'
-
-  fw = words(frommems)
-  ecount = 0
-  do i = 1 to fw
-    mem = word(frommems,i)
-    cr  = null
-    crf = null
-   /* ------------------------- *
-    | cr     delta reason       |
-    | crf    copy eligible flag |
-    |        1 = eligible       |
-    * ------------------------- */
-    if wordpos(mem,tomems) = 0 then do
-       cr  = 'Not in To PDS'
-       crf = 1
-       ecount = ecount + 1
-       end
-    else do
-      parse value from.mem with fdate ftime .
-      parse value to.mem   with tdate ttime .
-      if ignore_stats = 1
-      then parse value '' with fdate ftime tdate ttime
-      Select
-        When fdate''tdate = null then do
-             call check_delta
-             end
-        When fdate = null then do
-             call check_delta
-             end
-        When tdate = null then do
-             call check_delta
-             end
-        When fdate > tdate then do
-             cr = 'From Date newer than To Date'
-             crf = 1
-             ecount = ecount + 1
-             end
-        When fdate < tdate then do
-             cr = 'To Date newer than From Date'
-             end
-        When tdate = null then do
-             cr = 'To Date is blank'
-             crf = 1
-             ecount = ecount + 1
-             end
-        When fdate = tdate then do
-           if ftime > ttime then do
+  if ignore_stats = 0 then do
+    fw = words(frommems)
+    ecount = 0
+    do i = 1 to fw
+      mem = word(frommems,i)
+      cr  = null
+      crf = null
+      /* ------------------------- *
+      | cr     delta reason       |
+      | crf    copy eligible flag |
+      |        1 = eligible       |
+      * ------------------------- */
+      if wordpos(mem,tomems) = 0 then do
+        cr  = 'Not in To PDS'
+        crf = 1
+        ecount = ecount + 1
+      end
+      else do
+        parse value from.mem with fdate ftime fcdate fctime fv vm fl .
+        parse value to.mem   with tdate ttime tcdate tctime tv tm tl .
+        if ignore_stats = 1
+        then parse value '' with fdate ftime tdate ttime
+        Select
+          When fl = 0 then do
+            cr = 'From member with 0 records'
+          end
+          When tl = 0 then do
+            cr = 'To member with 0 records'
+          end
+          When fdate''tdate = null then do
+            call check_delta
+          end
+          When fdate = null then do
+            call check_delta
+          end
+          When tdate = null then do
+            call check_delta
+          end
+          When fdate > tdate then do
+            cr = 'From Date newer than To Date'
+            crf = 1
+            ecount = ecount + 1
+          end
+          When fdate < tdate then do
+            cr = 'To Date newer than From Date'
+          end
+          When tdate = null then do
+            cr = 'To Date is blank'
+            crf = 1
+            ecount = ecount + 1
+          end
+          When fdate = tdate then do
+            if ftime > ttime then do
               cr = 'From Date/Time is newer than' ,
-                    'To Date/Time'
+                'To Date/Time'
               crf = 1
               ecount = ecount + 1
-              end
-           if ftime < ttime then cr = 'To Date/Time is newer than' ,
-             'From Date/Time'
+            end
+            if ftime < ttime then cr = 'To Date/Time is newer than' ,
+              'From Date/Time'
           end
-        Otherwise nop
+          Otherwise nop
+        end
+      end
+      'tbadd' stats
+    end
+  end
+  else do
+    Address TSO
+    'Alloc f(outdd) spa(15,15) tr new reuse'
+    'alloc f(newdd) shr reuse ds('topds')'
+    'alloc f(olddd) shr reuse ds('frompds')'
+    if strip(mempat) /= null then do
+      o.1 = 'SELECT' mempat
+      o.0 = 1
+      'alloc f(sysin) new spa(1,1) tr recfm(f b) lrecl(80)' ,
+        'blksize(6160)'
+      'execio * diskw sysin (finis sem o.'
+    end
+    Address ISPExec ,
+      'Select pgm(isrsupc) parm(OVSUML,LINECMP,NOSEQ)'
+    'Execio * diskr outdd (finis stem in.'
+    'Free f(outdd newdd olddd)'
+    if strip(mempat) /= null then 'Free f(sysin)'
+    Address ISPExec
+    np = 0
+    cr = 'Delta'
+    ecount = 0
+
+    do i = 1 to in.0
+      if left(in.i,1) = '1' then iterate
+      if word(in.i,1) = 'NEW:' then iterate
+      if left(in.i,3) = ' **' then do
+        mem = word(in.i,2)
+        crf = 1
+        'tbadd' stats
+        ecount = ecount + 1
+      end
+      if word(in.i,1) = 'NON-PAIRED' then do
+        np = 1
+        iterate
+      end
+      if pos('PDS LINE',in.i) > 0 then leave
+      if np = 1 then do
+        parse value in.i with . 9 memto 17 . 49   memfrom 57 .
+        if strip(memto) /= null then do
+          mem = strip(memto)
+          cr = 'Not in From PDS'
+          crf = 1
+          'tbadd' stats
+          ecount = ecount + 1
+        end
+        if strip(memfrom) /= null then do
+          mem = strip(memfrom)
+          cr = 'Not in To PDS'
+          crf = 1
+          'tbadd' stats
+          ecount = ecount + 1
+        end
       end
     end
-    'tbadd' stats
   end
 
   zerrsm   = ecount 'Copy Eligible'
   zerrlm   = ecount 'members eligible to be Copied.'
   'Setmsg Msg(isrz002)'
 
-/* --------------------------------- *
- | Process the options for ONLY parm |
- * --------------------------------- */
- if wordpos('ONLY',opt) > 0 then zcmd = 'ONLY'
+  if ecount = 0 then
+  if wordpos('QUICK',opt) > 0
+  then do
+    'tbend' stats
+    call done
+  end
 
-/* ---------------------------------------------------- *
- | Sort the table and then display the table of members |
- * ---------------------------------------------------- */
+  /* --------------------------------- *
+  | Process the options for ONLY parm |
+  * --------------------------------- */
+  if wordpos('ONLY',opt) > 0 then zcmd = 'ONLY'
+
+  /* ---------------------------------------------------- *
+  | Sort the table and then display the table of members |
+  * ---------------------------------------------------- */
   'tbsort' stats 'fields(mem,c,a)'
   ztdsels = 0
   src     = 0
   crp     = 1
   rowcrp  = 0
   do forever
-    cr = null
+    parse value '' with cr zerrsm
     if zcmd = null then do
-    if src = 4 then "TBDispl" stats
-       else do
-            "TBTOP" stats
-            "TBSKIP" stats "NUMBER("crp")"
-            if rowcrp = 0 then
-               "TBDISPL" stats "PANEL(zSynct)"
-               else
-               "TBDISPL" stats "PANEL(zSynct)",
-                       "CSRROW("rowcrp") AUTOSEL(NO)"
-             end
-    src = rc
-    crp = rowcrp
-    if src > 4 then leave
+      if src = 4 then "TBDispl" stats
+      else do
+        "TBTOP" stats
+        "TBSKIP" stats "NUMBER("crp")"
+        if rowcrp = 0 then
+        "TBDISPL" stats "PANEL(zSynct)"
+        else
+        "TBDISPL" stats "PANEL(zSynct)",
+          "CSRROW("rowcrp") AUTOSEL(NO)"
+      end
+      src = rc
+      crp = ztdtop
+      if src > 4 then leave
     end
 
-/* --------------------------------------------- *
- | Now process the table commands and selections |
- * --------------------------------------------- */
+    /* --------------------------------------------- *
+    | Now process the table commands and selections |
+    * --------------------------------------------- */
+    if abbrev('FLIP',word(zcmd,1),2) = 1 then zcmd = 'ZSWAP'
     if zcmd /= null then
     Select
-     /* ------------------------------ *
+      /* ------------------------------ *
       | Copy all copy eligible members |
       * ------------------------------ */
       When abbrev('COPY',word(zcmd,1),2) = 1 then do
-           'tbtop' stats
-           count = 0
-           do forever
-              'tbskip' stats
-              if rc > 0 then leave
-              if cr = null then iterate
-              if cr = 'Copied' then iterate
-              if crf /= 1 then iterate
-              if word(zcmd,2) = null
-                 then x=copy_mem(mem)
-                 else x = 0
-              if x = 0 then do
-                       cr = 'Copied'
-                       if word(zcmd,2) /= null
-                          then cr = 'Copy Simulated'
-                       count = count + 1
-                       end
-                       else cr = zerrlm
-             'tbput' stats
-           end
-       zerrsm   = count 'Copied'
-       zerrlm   = 'Copied' count 'members from' frompds 'to' topds
-       'Setmsg Msg(isrz002)'
+        'tbtop' stats
+        count = 0
+        do forever
+          'tbskip' stats
+          if rc > 0 then leave
+          if cr = null then iterate
+          if cr = 'Copied' then iterate
+          if crf /= 1 then iterate
+          if word(zcmd,2) = null
+          then x=copy_mem(mem)
+          else x = 0
+          if x = 0 then do
+            cr = 'Copied'
+            if word(zcmd,2) /= null
+            then cr = 'Copy Simulated'
+            count = count + 1
+          end
+          else cr = zerrlm
+          'tbput' stats
         end
-     /* ------------------------------------------- *
+        zerrsm   = count 'Copied'
+        zerrlm   = 'Copied' count 'members from' frompds 'to' topds
+        'Setmsg Msg(isrz002)'
+      end
+      /* ------------------------------------------- *
       | Locate routine                              |
       |                                             |
       | find the first/next member that matches the |
@@ -464,27 +569,27 @@
         'tbtop' stats
         srchmem = word(zcmd,2)
         if srchme = null then do
-           zerrsm = 'Invalid'
-           zerrlm = 'No Locate member provided'
-           'Setmsg msg(isrz002)'
-           leave
-           end
-        do forever
-           'tbskip' stats 'rowid(newcrp)'
-           if rc > 0 then do
-              'tbtop' stats
-              leave
-              end
-           if mem >= srchmem then do
-              crp = newcrp
-              zerrsm = 'Located'
-              zerrlm = srchme 'located'
-              'Setmsg msg(isrz002)'
-              leave
-              end
-           end
+          zerrsm = 'Invalid'
+          zerrlm = 'No Locate member provided'
+          'Setmsg msg(isrz002)'
+          leave
         end
-     /* ---------------------------------------------- *
+        do forever
+          'tbskip' stats 'rowid(newcrp)'
+          if rc > 0 then do
+            'tbtop' stats
+            leave
+          end
+          if mem >= srchmem then do
+            crp = newcrp
+            zerrsm = 'Located'
+            zerrlm = srchme 'located'
+            'Setmsg msg(isrz002)'
+            leave
+          end
+        end
+      end
+      /* ---------------------------------------------- *
       | Only routine                                   |
       |                                                |
       | Remove all members that are NOT copy eligible. |
@@ -492,15 +597,15 @@
       When abbrev('ONLY',word(zcmd,1),2) = 1 then do
         'tbtop' stats
         do forever
-           'tbskip' stats
-           if rc > 0 then do
-              'tbtop' stats
-              leave
-              end
-           if crf /= 1 then 'tbdelete' stats
-           end
+          'tbskip' stats
+          if rc > 0 then do
+            'tbtop' stats
+            leave
+          end
+          if crf /= 1 then 'tbdelete' stats
         end
-     /* ------------------------------------------------------- *
+      end
+      /* ------------------------------------------------------- *
       | Save routine                                            |
       |                                                         |
       | Save the current table of members, with ispf stat info, |
@@ -519,96 +624,96 @@
         rn = rn + 1
         report.rn = ' To PDS:  ' topds
         if mempat /= null then do
-           rn = rn + 1
-           report.rn = ' Filter:  ' mempat
-           end
+          rn = rn + 1
+          report.rn = ' Filter:  ' mempat
+        end
         rn = rn + 1
         report.rn = '  '
         rn = rn + 1
         report.rn = ' ' left('Member',9) left('Create',10),
-                    left('Modified',10) left('Time',5) center('V.M',5) ,
-                    right('Size',7) right('Initial',7) right('Mod',7) ,
-                    left('Userid',8) 'Delta'
+          left('Modified',10) left('Time',5) center('V.M',5) ,
+          right('Size',7) right('Initial',7) right('Mod',7) ,
+          left('Userid',8) 'Delta'
         rn = rn + 1
         report.rn = '  '
         do forever
-           'tbskip' stats
-           if rc > 0 then do
-              'tbtop' stats
-              leave
-              end
-           parse value from.mem with fmdate fmtime fcdate fvers ,
-                 fmod fcnorc finorc fmnorc fuser
-           if finorc /= null then finorc = finorc + 0
-           parse value to.mem with tmdate tmtime tcdate tvers ,
-                 tmod tcnorc tinorc tmnorc tuser
-           if finorc /= null then finorc = finorc + 0
-           rn = rn + 1
-           if cr /= null then delta = 'Delta'
-                         else delta = null
-           if from.mem = null
-               then report.rn = ' ' left(mem,9) 'No ISPF Statistics'
-           else report.rn = ' ' left(mem,9) left(fcdate,10) left(fmdate,10),
-                       left(fmtime,5)  center(fvers'.'fmod,5) ,
-                       right(fcnorc,7) right(finorc,7) right(fmnorc,7) ,
-                       left(fuser,8) delta
-           rn = rn + 1
-           if to.mem = null
-               then report.rn = left(' ',11) 'No ISPF Statistics'
-           else report.rn =  left(' ',11) left(tcdate,10) left(tmdate,10),
-                       left(tmtime,5) center(tvers'.'tmod,5) ,
-                       right(tcnorc,7) right(tinorc,7) right(tmnorc,7) ,
-                       left(tuser,8)
-           end
-           'control display save'
-           if sysvar('syspref') /= userid()
-              then reportds = "'"sysvar('syspref')".zsync.report'"
-              else reportds = 'zsync.report'
-           call outtrap 'x.'
-           Address TSO
-           'Delete' reportds
-           call outtrap 'off'
-            bdd = 'zsyn'random(9999)
-            'alloc f('bdd') unit(sysda) space(5,5) tr' ,
-               'dataset('reportds') new' ,
-               'recfm(v b a) lrecl(94) blksize(0)'
-            'execio * diskw' bdd '(finis stem report.'
-            'Free f('bdd')'
-            Address ISPExec
-            'Control Display Save'
-            'Edit dataset('reportds')'
-            'Control Display Restore'
-           'control display restore'
+          'tbskip' stats
+          if rc > 0 then do
+            'tbtop' stats
+            leave
+          end
+          parse value from.mem with fmdate fmtime fcdate fvers ,
+            fmod fcnorc finorc fmnorc fuser
+          if finorc /= null then finorc = finorc + 0
+          parse value to.mem with tmdate tmtime tcdate tvers ,
+            tmod tcnorc tinorc tmnorc tuser
+          if finorc /= null then finorc = finorc + 0
+          rn = rn + 1
+          if cr /= null then delta = 'Delta'
+          else delta = null
+          if from.mem = null
+          then report.rn = ' ' left(mem,9) 'No ISPF Statistics'
+          else report.rn = ' ' left(mem,9) left(fcdate,10) left(fmdate,10),
+            left(fmtime,5)  center(fvers'.'fmod,5) ,
+            right(fcnorc,7) right(finorc,7) right(fmnorc,7) ,
+            left(fuser,8) delta
+          rn = rn + 1
+          if to.mem = null
+          then report.rn = left(' ',11) 'No ISPF Statistics'
+          else report.rn =  left(' ',11) left(tcdate,10) left(tmdate,10),
+            left(tmtime,5) center(tvers'.'tmod,5) ,
+            right(tcnorc,7) right(tinorc,7) right(tmnorc,7) ,
+            left(tuser,8)
         end
-     /* ------------------------------------- *
+        'control display save'
+        if sysvar('syspref') /= userid()
+        then reportds = "'"sysvar('syspref')".zsync.report'"
+        else reportds = 'zsync.report'
+        call outtrap 'x.'
+        Address TSO
+        'Delete' reportds
+        call outtrap 'off'
+        bdd = 'zsyn'random(9999)
+        'alloc f('bdd') unit(sysda) space(5,5) tr' ,
+          'dataset('reportds') new' ,
+          'recfm(v b a) lrecl(94) blksize(0)'
+        'execio * diskw' bdd '(finis stem report.'
+        'Free f('bdd')'
+        Address ISPExec
+        'Control Display Save'
+        'Edit dataset('reportds')'
+        'Control Display Restore'
+        'control display restore'
+      end
+      /* ------------------------------------- *
       | Refresh routine                       |
       |                                       |
       | Rebuild the member list from scratch. |
       * ------------------------------------- */
       When abbrev('REFRESH',word(zcmd,1),2) = 1 then do
-           drop from. to.
-           'tbend' stats
-           "LMFree  Dataid("fromid")"
-           "LMFree  Dataid("toid")"
-           if word(zcmd,2) /= null then mempat = word(zcmd,2)
-           signal Refresh
-           end
-     /* ------------------------------------ *
+        drop from. to.
+        'tbend' stats
+        "LMFree  Dataid("fromid")"
+        "LMFree  Dataid("toid")"
+        if word(zcmd,2) /= null then mempat = word(zcmd,2)
+        signal Refresh
+      end
+      /* ------------------------------------ *
       | ZSwap routine                        |
       |                                      |
       | Swap the To and From datasets names. |
       * ------------------------------------ */
       When abbrev('ZSWAP',word(zcmd,1),2) = 1 then do
-           drop from. to.
-           'tbend' stats
-           "LMFree  Dataid("fromid")"
-           "LMFree  Dataid("toid")"
-           ofrompds = frompds
-           frompds  = topds
-           topds    = ofrompds
-           signal Refresh
-           end
-     /* ------------------------------------------------- *
+        drop from. to.
+        'tbend' stats
+        "LMFree  Dataid("fromid")"
+        "LMFree  Dataid("toid")"
+        ofrompds = frompds
+        frompds  = topds
+        topds    = ofrompds
+        signal Refresh
+      end
+      /* ------------------------------------------------- *
       | Sort routine                                      |
       |                                                   |
       | Sort by member or state  (mem or state)           |
@@ -618,143 +723,165 @@
         parse value zcmd with cmd sfield order
         if order = null then so = 'a'
         else select
-             When order = 'A' then so = 'a'
-             When order = 'D' then so = 'd'
-             otherwise do
-                zerrsm = zcmd 'Unknown'
-                zerrlm = order 'is an unknown sort order (A/D)'
-                'setmsg msg(isrz002)'
-             end
-             end
+          When order = 'A' then so = 'a'
+          When order = 'D' then so = 'd'
+          otherwise do
+            zerrsm = zcmd 'Unknown'
+            zerrlm = order 'is an unknown sort order (A/D)'
+            'setmsg msg(isrz002)'
+          end
+        end
         if left(sfield,1) = 'M' then
         'tbsort' stats 'fields(mem,c,'so')'
         if left(sfield,1) = 'S' then
         'tbsort' stats 'fields(cr,c,'so')'
       end
       Otherwise do
-                zerrsm = zcmd 'Unknown'
-                zerrlm = zcmd 'is an unknown command'
-                'setmsg msg(isrz002)'
-                end
+        zerrsm = zcmd 'Unknown'
+        zerrlm = zcmd 'is an unknown command'
+        'setmsg msg(isrz002)'
+      end
     end
     zcmd = null
 
-/* ------------------------------------- *
- | Process the Member Selection Commands |
- * ------------------------------------- */
-  if csel /= '=' then hold_sel = csel
-                 else csel = hold_sel
-  If csel = 'S' then csel = '/'
-  If csel = '/' then do forever
-     csel = null
-     'Addpop row(2) column(5)'
-     'display panel(zSyncs)'
-     xc = rc
-     'rempop'
-     if xc > 0 then leave
-     if zcmd /= null then csel = zcmd
-     if zcmd = null then iterate
-     zcmd = null
-     leave
-     end
-  if csel /= null then
-     Select
-     /* ----------------------------------------------------------- *
+    /* ------------------------------------- *
+    | Process the Member Selection Commands |
+    * ------------------------------------- */
+    if csel /= '=' then hold_sel = csel
+    else csel = hold_sel
+    If csel = 'S' then csel = '/'
+    If csel = '/' then do forever
+      csel = null
+      'Addpop row(2) column(5)'
+      'display panel(zSyncs)'
+      xc = rc
+      'rempop'
+      if xc > 0 then leave
+      if zcmd /= null then csel = zcmd
+      if zcmd = null then iterate
+      zcmd = null
+      leave
+    end
+    if csel = 'C' then
+    if sysrecfm = 'U'
+    then csel = 'CS'
+    if csel /= null then
+    Select
+      /* ----------------------------------------------------------- *
       | I selection                                                 |
       |                                                             |
       | Display the ISPF Stat information on the from and to member |
       * ----------------------------------------------------------- */
-     When csel = 'I' then do
-          'control display save'
-          'Addpop row(2) column(5)'
+      When csel = 'I' then do
+        if ignore_stats = 1 then do
+          ispf_stats = get_stats(mem frompds)
+          from.mem = ispf_stats
+          ispf_stats = get_stats(mem topds)
+          to.mem = ispf_stats
+        end
+        'control display save'
+        'Addpop row(2) column(5)'
+        if sysrecfm /= 'U' then do
           parse value from.mem with fmdate fmtime fcdate fvers ,
-                fmod fcnorc finorc fmnorc fuser
+            fmod fcnorc finorc fmnorc fuser
           parse value to.mem with tmdate tmtime tcdate tvers ,
-                tmod tcnorc tinorc tmnorc tuser
+            tmod tcnorc tinorc tmnorc tuser
           'display panel(zcispf)'
-          'rempop'
-          'control display restore'
-          end
-     /* ---------------------------------------- *
+        end
+        else do
+          parse value from.mem with flsize flamode flrmode ,
+            flattr flalias flssi
+          parse value to.mem with tlsize tlamode tlrmode ,
+            tlattr tlalias tlssi
+          'display panel(zcispfU)'
+        end
+        'rempop'
+        'control display restore'
+      end
+      /* ---------------------------------------- *
       | X selection                              |
       |                                          |
       | Delete the selected member from the list |
       * ---------------------------------------- */
-     When csel = 'X' then 'tbdelete' stats
-     /* ---------------------- *
+      When csel = 'X' then 'tbdelete' stats
+      /* ---------------------- *
       | Browse routine         |
       |                        |
       | Browse the From member |
       * ---------------------- */
-     When csel = 'B' then do
+      When csel = 'B' then do
         oldds = fixup_dsn(frompds)
         'Control Display Save'
         'Browse Dataset('oldds')'
         'Control Display Restore'
-        end
-     /* ------------------------ *
+        if zerrsm /= null then 'setmsg msg(isrz003)'
+      end
+      /* ------------------------ *
       | Edit selection           |
       |                          |
       | Edit the selected member |
       * ------------------------ */
-     When csel = 'E' then do
+      When csel = 'E' then do
         oldds = fixup_dsn(frompds)
         'Control Display Save'
         'Edit Dataset('oldds')'
         'Control Display Restore'
-        end
-     /* -------------------- *
+        if zerrsm /= null then 'setmsg msg(isrz003)'
+      end
+      /* -------------------- *
       | Browse To routine    |
       |                      |
       | Browse the To member |
       * -------------------- */
-     When csel = 'BT' then do
+      When csel = 'BT' then do
         newds = fixup_dsn(topds)
         'Control Display Save'
         'Browse Dataset('newds')'
         'Control Display Restore'
-        end
-     /* ------------------ *
+        if zerrsm /= null then 'setmsg msg(isrz003)'
+      end
+      /* ------------------ *
       | Edit To routine    |
       |                    |
       | Edit the To member |
       * ------------------ */
-     When csel = 'ET' then do
+      When csel = 'ET' then do
         newds = fixup_dsn(topds)
         'Control Display Save'
         'Edit Dataset('newds')'
         'Control Display Restore'
-        end
-     /* ----------------------------------------------- *
+        if zerrsm /= null then 'setmsg msg(isrz003)'
+      end
+      /* ----------------------------------------------- *
       | Compare the member (from/to)using the ISPF Edit |
       | Compare command with eXclude                    |
       * ----------------------------------------------- */
-     When csel = 'C' then do
-        if cr  = 'Not in To PDS' then do
-           zerrsm = 'Not Supported'
-           zerrlm = 'Member' mem 'is not in the To PDS so it cannot' ,
-                    'be compared.'
+      When csel = 'C' then do
+        if pos('Not in',cr) > 0 then do
+          zerrsm = 'Not Supported'
+          zerrlm = 'Member' mem 'is not in the To PDS so it cannot' ,
+            'be compared.'
           'Setmsg Msg(isrz002)'
-           end
+        end
         else do
-        oldds = fixup_dsn(frompds)
-        parm  = fixup_dsn(topds)
-        parm = parm oldds
-        "LMINIT DATAID(fromid) DATASET("frompds")"
-        "LMOPEN DATAID("fromid") OPTION(INPUT)"
-        'Control Display Save'
-        'edit dataid('fromid') member('mem') macro(zsyncm)' ,
-             'parm(parm)'
-        'Control Display Restore'
-        'vget (xcr)'
-        cr = xcr
-        if xcr = 'Delta' then crf = 1
-                         else crf = 0
-         'tbput' stats
-        "LMClose Dataid("fromid")"
+          oldds = fixup_dsn(frompds)
+          parm  = fixup_dsn(topds)
+          parm = parm oldds
+          "LMINIT DATAID(fromid) DATASET("frompds")"
+          "LMOPEN DATAID("fromid") OPTION(INPUT)"
+          'Control Display Save'
+          'edit dataid('fromid') member('mem') macro(zsyncm)' ,
+            'parm(parm)'
+          'Control Display Restore'
+          'vget (xcr)'
+          cr = xcr
+          if xcr = 'Delta' then crf = 1
+          else crf = 0
+          'tbput' stats
+          "LMClose Dataid("fromid")"
         end
-        end
-     /* ------------------------------------------- *
+      end
+      /* ------------------------------------------- *
       | CS and CD routines                          |
       |                                             |
       | Compare using ISPF SuperC                   |
@@ -762,283 +889,309 @@
       | CS - compare and display the SuperC report  |
       | CD - compare and then update the state only |
       * ------------------------------------------- */
-     When wordpos(csel,'CS CD') > 0 then do
-        if cr  = 'Not in To PDS' then do
-           zerrsm = 'Not Supported'
-           zerrlm = 'Member' mem 'is not in the To PDS so it cannot' ,
-                    'be compared.'
+      When wordpos(csel,'CS CD') > 0 then do
+        if pos('Not in',cr) > 0 then do
+          zerrsm = 'Not Supported'
+          zerrlm = 'Member' mem 'is not in the To PDS so it cannot' ,
+            'be compared.'
           'Setmsg Msg(isrz002)'
-           end
+        end
         else do
-        Address TSO
-        call outtrap 'x.'
-        'Free f(olddd newdd outdd)'
-        call outtrap 'off'
-        oldds = fixup_dsn(frompds)
-        newds = fixup_dsn(topds)
-        'alloc f(olddd) ds('oldds') shr reuse'
-        'alloc f(newdd) ds('newds') shr reuse'
-        'alloc f(outdd) new spa(15,15) tr reuse' ,
+          Address TSO
+          call outtrap 'x.'
+          'Free f(olddd newdd outdd)'
+          call outtrap 'off'
+          oldds = fixup_dsn(frompds)
+          newds = fixup_dsn(topds)
+          'alloc f(olddd) ds('oldds') shr reuse'
+          'alloc f(newdd) ds('newds') shr reuse'
+          'alloc f(outdd) new spa(15,15) tr reuse' ,
             'recfm(v b) lrecl(121) blksize(0) unit(sysda)'
-        Address ISPexec ,
-           'Select PGM(isrsupc) Parm(DELTAL,LINECMP)'
-        'execio * diskr outdd (finis stem in.'
-        'free f(olddd newdd outdd)'
-        Address ISPexec
-        crf = 0
-        cr = 'Identical'
-        do ci = 1 to in.0
-           if pos('TOTAL CHANGES',in.ci) > 0 then
-              if word(in.ci,6) > 0 then crf = 1
-           if crf = 1 then cr = 'Delta'
-           if crf = 1 then leave
-           end
-        if csel = 'CS' then do
-           Address TSO
-           bdd = 'zsyn'random(9999)
-           'alloc f('bdd') unit(sysda) space(5,5) tr' ,
-              'recfm(v b a) lrecl(121) blksize(0)'
-           'execio * diskw' bdd '(finis stem in.'
-           Address ISPExec
-           "LMINIT DATAID(lmb) DDNAME("bdd")"
-           'Control Display Save'
-           'View dataid('lmb')'
-           'Control Display Restore'
-           "LMFree  Dataid("lmb")"
-           Address TSO 'Free f('bdd')'
-           end
-        'tbput' stats
+          Address ISPexec ,
+            'Select PGM(isrsupc) Parm(DELTAL,LINECMP)'
+          'execio * diskr outdd (finis stem in.'
+          'free f(olddd newdd outdd)'
+          Address ISPexec
+          crf = 0
+          cr = 'Identical'
+          do ci = 1 to in.0
+            if pos('TOTAL CHANGES',in.ci) > 0 then
+            if word(in.ci,6) > 0 then crf = 1
+            if crf = 1 then cr = 'Delta'
+            if crf = 1 then leave
+          end
+          if csel = 'CS' then do
+            if pos('Not in',cr) > 0 then do
+              zerrsm   = 'Not Applicable.'
+    zerrlm   = 'Can not compare when one library does not have the member.'
+              'Setmsg Msg(isrz002)'
+            end
+            else do
+              Address TSO
+              bdd = 'zsyn'random(9999)
+              'alloc f('bdd') unit(sysda) space(5,5) tr' ,
+                'recfm(v b a) lrecl(121) blksize(0)'
+              'execio * diskw' bdd '(finis stem in.'
+              Address ISPExec
+              "LMINIT DATAID(lmb) DDNAME("bdd")"
+              'Control Display Save'
+              'View dataid('lmb')'
+              'Control Display Restore'
+              "LMFree  Dataid("lmb")"
+              Address TSO 'Free f('bdd')'
+            end
+          end
+          'tbput' stats
         end
-        end
-     /* ------------------------------------------------ *
+      end
+      /* ------------------------------------------------ *
       | Z routine                                        |
       |                                                  |
       | Copy the selected member regardless of the state |
       | of copy eligibility.                             |
       * ------------------------------------------------ */
-     When csel = 'Z' then do
+      When csel = 'Z' then do
         x = copy_mem(mem)
         if rc = 0 then cr = 'Copied'
         else cr = zerrlm
         crf = 0
         'tbput' stats
-        end
-     Otherwise nop
-     end
-  csel = null
+      end
+      Otherwise nop
+    end
+    csel = null
   end
   'tbend' stats
 
-/* --------------------------------------------------- *
- | Close the current set of datasets and return to the |
- | prompting panel.                                    |
- * --------------------------------------------------- */
- redo = 1
- if wordpos('ONCE',opt) = 0 then
-          call check_dsns
+  /* --------------------------------------------------- *
+  | Close the current set of datasets and return to the |
+  | prompting panel.                                    |
+  * --------------------------------------------------- */
+  redo = 1
+  if wordpos('ONCE',opt) = 0 then
+  call check_dsns
 
-/* ----------------- *
- | Clean up and exit |
- * ----------------- */
- Done:
+  /* ----------------- *
+  | Clean up and exit |
+  * ----------------- */
+Done:
   if toid /= 'TOID' then 'lmfree dataid('toid')'
   if fromid /= 'FROMID' then 'lmfree dataid('fromid')'
   if load_info /= null then do
     do until length(load_info) = 0
       parse value load_info with dd libd load_info
       if left(libd,6) = "ALTLIB" then do
-         if libd = "ALTLIBC" then lib = "CLIST"
-                             else lib = "EXEC"
-         Address TSO,
-           "Altlib Deact Application("lib")"
-         end
+        if libd = "ALTLIBC" then lib = "CLIST"
+        else lib = "EXEC"
+        Address TSO,
+          "Altlib Deact Application("lib")"
+      end
       "libdef" libd
       address tso "free f("dd")"
     end
   end
   Exit 0
 
-/* --------------------------------------------------- *
- | Check_Delta routine to check for differences if the |
- | members have no ispf stats.                         |
- * --------------------------------------------------- */
- Check_Delta:
- xcr = null
- oldds = fixup_dsn(frompds)
- parm  = fixup_dsn(topds)
- parm = parm oldds 'check'
- "LMINIT DATAID(dfrom) DATASET("frompds")"
- "LMOPEN DATAID("dfrom") OPTION(INPUT)"
- 'edit dataid('dfrom') member('mem') macro(zsyncm)' ,
-       'parm(parm)'
- 'vget (xcr)'
- if xcr = 'Delta' then do
+Get_Stats: Procedure Expose sysrecfm
+  arg statmem statpds
+  statpds = strip(statpds)
+  statmem = strip(statmem)
+  "LMINIT DATAID(statid) DATASET("statpds")"
+  "LMQUERY Dataid("statid") DATASET(QDSN)"
+  "LMOPEN DATAID("statid") OPTION(INPUT)"
+  "LMMFIND Dataid("statid") MEMBER("statmem")" ,
+    "STATS(YES)"
+  if rc > 3 then stats = '  '
+  else do
+    if sysrecfm /= 'U' then
+    stats = zlm4date zlmtime ,
+      zlc4date zlvers zlmod zlcnorc zlinorc zlmnorc zluser
+    else stats = zlsize zlamode zlrmode zlattr zlalias zlssi
+  end
+  "LMClose Dataid("statid")"
+  return stats
+
+  /* --------------------------------------------------- *
+  | Check_Delta routine to check for differences if the |
+  | members have no ispf stats.                         |
+  * --------------------------------------------------- */
+Check_Delta:
+  xcr = null
+  oldds = fixup_dsn(frompds)
+  parm  = fixup_dsn(topds)
+  parm = parm oldds 'check'
+  "LMINIT DATAID(dfrom) DATASET("frompds")"
+  "LMOPEN DATAID("dfrom") OPTION(INPUT)"
+  'edit dataid('dfrom') member('mem') macro(zsyncm)' ,
+    'parm(parm)'
+  'vget (xcr)'
+  if xcr = 'Delta' then do
     crf = 1
     cr = 'Delta - No ISPF Stats'
     ecount = ecount + 1
-    end
+  end
   else do
-       cr = 'Identical - No ISPF Stats'
-       crf = 0
-       end
- "LMClose Dataid("dfrom")"
- "LMFree Dataid("dfrom")"
- return
+    cr = 'Identical - No ISPF Stats'
+    crf = 0
+  end
+  "LMClose Dataid("dfrom")"
+  "LMFree Dataid("dfrom")"
+  return
 
 
-/* ---------------------------------------------------------- *
- | fixup_dsn routine to provide a fully qualified dsname with |
- | quotes to be used.                                         |
- * ---------------------------------------------------------- */
- Fixup_dsn: Procedure expose mem
- arg fixdsn
- if left(fixdsn,1) = "'" then do
+  /* ---------------------------------------------------------- *
+  | fixup_dsn routine to provide a fully qualified dsname with |
+  | quotes to be used.                                         |
+  * ---------------------------------------------------------- */
+Fixup_dsn: Procedure expose mem
+  arg fixdsn
+  if left(fixdsn,1) = "'" then do
     parse value fixdsn with "'"fixdsn"'"
     newdsn = "'"fixdsn"("mem")'"
-    end
-    else newdsn = fixdsn'('mem')'
- return newdsn
+  end
+  else newdsn = fixdsn'('mem')'
+  return newdsn
 
-/* ------------------------------- *
- | Copy the member from From to To |
- * ------------------------------- */
+  /* ------------------------------- *
+  | Copy the member from From to To |
+  * ------------------------------- */
 Copy_Mem:
   arg copymem
   'lmcopy fromid('fromid') frommem('copymem')' ,
     'todataid('toid') replace trunc'
   if rc = 0 then
-     'log msg(ZS001)'
+  'log msg(ZS001)'
   return rc
 
 Prompt:
   parse value '' with null flrecl tlrecl trwarn redo ,
-                      hold_sel zcmd
+    hold_sel zcmd
   do forever
     if ignore_stats = 1 then igstats = 'Y'
-                        else igstats = 'N'
+    else igstats = 'N'
     'Display Panel(zSync)'
     if rc > 0 then call done
     if igstats = 'Y' then ignore_stats = 1
-                     else ignore_stats = 0
+    else ignore_stats = 0
     leave
   end
   return
 
-/* --------------------  rexx procedure  -------------------- *
- * Name:      LoadISPF                                        *
- *                                                            *
- * Function:  Load ISPF elements that are inline in the       *
- *            REXX source code.                               *
- *                                                            *
- * Syntax:    rc = loadispf()                                 *
- *                                                            *
- *            The inline ISPF resources are limited to        *
- *            ISPF Messages, Panels, and Skeletons,           *
- *                 CLISTs and EXECs are also supported.       *
- *                                                            *
- *            The inline resources must start in column 1     *
- *            and use the following syntax:                   *
- *                                                            *
- *            >START    used to indicate the start of the     *
- *                      inline data                           *
- *                                                            *
- *            >END    - used to indicate the end of the       *
- *                      inline data                           *
- *                                                            *
- *            Each resource begins with a type record:        *
- *            >type name                                      *
- *               where type is CLIST, EXEC, MSG, PANEL, SKEL  *
- *                     name is the name of the element        *
- *                                                            *
- * Sample usage:                                              *
- *          -* rexx *-                                        *
- *          load_info = loadispf()                            *
- *          ... magic code happens here (your code) ...       *
- *          Address ISPEXEC                                   *
- *          do until length(load_info) = 0                    *
- *             parse value load_info with dd libd load_info   *
- *             if left(libd,6) = "ALTLIB" then do             *
- *                if libd = "ALTLIBC" then lib = "CLIST"      *
- *                                    else lib = "EXEC"       *
- *                Address TSO,                                *
- *                  "Altlib Deact Application("lib")"         *
- *                end                                         *
- *             else "libdef" libd                             *
- *             address tso "free f("dd")"                     *
- *             end                                            *
- *          exit                                              *
- *          >Start inline elements                            *
- *          >Panel panel1                                     *
- *          ...                                               *
- *          >Msg msg1                                         *
- *          ...                                               *
- *          >End of inline elements                           *
- *                                                            *
- * Returns:   the list of ddnames allocated for use along     *
- *            with the libdef's performed or altlib           *
- *                                                            *
- *            format is ddname libdef ddname libdef ...       *
- *                   libdef may be altlibc or altlibe         *
- *                   for altlib clist or altlib exec          *
- *                                                            *
- * Notes:     Entire routine must be included with REXX       *
- *            exec - inline with the code.                    *
- *                                                            *
- * Comments:  The entire rexx program is processed from the   *
- *            last record to the first to find the >START     *
- *            record at which point all records from that     *
- *            point on are processed until the >END           *
- *            statement or the end of the program is found.   *
- *                                                            *
- *            It is *strongly* suggested that the inline      *
- *            elements be at the very end of your code so     *
- *            that the search for them is faster.             *
- *                                                            *
- *            Inline ISPTLIB or ISPLLIB were not supported    *
- *            because the values for these would have to be   *
- *            in hex.                                         *
- *                                                            *
- * Author:    Lionel B. Dyck                                  *
- *                                                            *
- * History:                                                   *
- *            12/09/16 - update for add_it routine            *
- *            05/10/16 - correction for clist and exec        *
- *            04/19/16 - bug correction                       *
- *            06/04/04 - Enhancements for speed               *
- *            08/05/02 - Creation                             *
- *                                                            *
- * ---------------------------------------------------------- *
- * Disclaimer: There is no warranty, either explicit or       *
- * implied with this code. Use it at your own risk as there   *
- * is no recourse from either the author or his employeer.    *
- * ---------------------------------------------------------- */
+  /* --------------------  rexx procedure  -------------------- *
+  * Name:      LoadISPF                                        *
+  *                                                            *
+  * Function:  Load ISPF elements that are inline in the       *
+  *            REXX source code.                               *
+  *                                                            *
+  * Syntax:    rc = loadispf()                                 *
+  *                                                            *
+  *            The inline ISPF resources are limited to        *
+  *            ISPF Messages, Panels, and Skeletons,           *
+  *                 CLISTs and EXECs are also supported.       *
+  *                                                            *
+  *            The inline resources must start in column 1     *
+  *            and use the following syntax:                   *
+  *                                                            *
+  *            >START    used to indicate the start of the     *
+  *                      inline data                           *
+  *                                                            *
+  *            >END    - used to indicate the end of the       *
+  *                      inline data                           *
+  *                                                            *
+  *            Each resource begins with a type record:        *
+  *            >type name                                      *
+  *               where type is CLIST, EXEC, MSG, PANEL, SKEL  *
+  *                     name is the name of the element        *
+  *                                                            *
+  * Sample usage:                                              *
+  *          -* rexx *-                                        *
+  *          load_info = loadispf()                            *
+  *          ... magic code happens here (your code) ...       *
+  *          Address ISPEXEC                                   *
+  *          do until length(load_info) = 0                    *
+  *             parse value load_info with dd libd load_info   *
+  *             if left(libd,6) = "ALTLIB" then do             *
+  *                if libd = "ALTLIBC" then lib = "CLIST"      *
+  *                                    else lib = "EXEC"       *
+  *                Address TSO,                                *
+  *                  "Altlib Deact Application("lib")"         *
+  *                end                                         *
+  *             else "libdef" libd                             *
+  *             address tso "free f("dd")"                     *
+  *             end                                            *
+  *          exit                                              *
+  *          >Start inline elements                            *
+  *          >Panel panel1                                     *
+  *          ...                                               *
+  *          >Msg msg1                                         *
+  *          ...                                               *
+  *          >End of inline elements                           *
+  *                                                            *
+  * Returns:   the list of ddnames allocated for use along     *
+  *            with the libdef's performed or altlib           *
+  *                                                            *
+  *            format is ddname libdef ddname libdef ...       *
+  *                   libdef may be altlibc or altlibe         *
+  *                   for altlib clist or altlib exec          *
+  *                                                            *
+  * Notes:     Entire routine must be included with REXX       *
+  *            exec - inline with the code.                    *
+  *                                                            *
+  * Comments:  The entire rexx program is processed from the   *
+  *            last record to the first to find the >START     *
+  *            record at which point all records from that     *
+  *            point on are processed until the >END           *
+  *            statement or the end of the program is found.   *
+  *                                                            *
+  *            It is *strongly* suggested that the inline      *
+  *            elements be at the very end of your code so     *
+  *            that the search for them is faster.             *
+  *                                                            *
+  *            Inline ISPTLIB or ISPLLIB were not supported    *
+  *            because the values for these would have to be   *
+  *            in hex.                                         *
+  *                                                            *
+  * Author:    Lionel B. Dyck                                  *
+  *                                                            *
+  * History:                                                   *
+  *            12/09/16 - update for add_it routine            *
+  *            05/10/16 - correction for clist and exec        *
+  *            04/19/16 - bug correction                       *
+  *            06/04/04 - Enhancements for speed               *
+  *            08/05/02 - Creation                             *
+  *                                                            *
+  * ---------------------------------------------------------- *
+  * Disclaimer: There is no warranty, either explicit or       *
+  * implied with this code. Use it at your own risk as there   *
+  * is no recourse from either the author or his employeer.    *
+  * ---------------------------------------------------------- */
 LoadISPF: Procedure
 
   parse value "" with null kmsg kpanel kskel first returns ,
     kclist kexec
-/* ------------------------------------------------------- *
- * Find the InLine ISPF Elements and load them into a stem *
- * variable.                                               *
- *                                                         *
- * Elements keyword syntax:                                *
- * >START - start of inline data                           *
- * >CLIST name                                             *
- * >EXEC name                                              *
- * >MSG name                                               *
- * >PANEL name                                             *
- * >SKEL name                                              *
- * >END   - end of all inline data (optional if last)      *
- * ------------------------------------------------------- */
+  /* ------------------------------------------------------- *
+  * Find the InLine ISPF Elements and load them into a stem *
+  * variable.                                               *
+  *                                                         *
+  * Elements keyword syntax:                                *
+  * >START - start of inline data                           *
+  * >CLIST name                                             *
+  * >EXEC name                                              *
+  * >MSG name                                               *
+  * >PANEL name                                             *
+  * >SKEL name                                              *
+  * >END   - end of all inline data (optional if last)      *
+  * ------------------------------------------------------- */
   last_line = sourceline()
   do i = last_line to 1 by -1
     line = sourceline(i)
     if translate(left(line,6)) = ">START " then leave
   end
   rec = 0
-/* --------------------------------------------------- *
- * Flag types of ISPF resources by testing each record *
- * then add each record to the data. stem variable.    *
- * --------------------------------------------------- */
+  /* --------------------------------------------------- *
+  * Flag types of ISPF resources by testing each record *
+  * then add each record to the data. stem variable.    *
+  * --------------------------------------------------- */
   do j = i+1 to last_line
     line = sourceline(j)
     if translate(left(line,5)) = ">END "   then leave
@@ -1051,22 +1204,22 @@ LoadISPF: Procedure
     data.rec = line
   end
 
-/* ----------------------------------------------------- *
- * Now create the Library and Load the Member(s)         *
- * ----------------------------------------------------- */
+  /* ----------------------------------------------------- *
+  * Now create the Library and Load the Member(s)         *
+  * ----------------------------------------------------- */
   Address ISPExec
-/* ----------------------------- *
- * Assign dynamic random ddnames *
- * ----------------------------- */
+  /* ----------------------------- *
+  * Assign dynamic random ddnames *
+  * ----------------------------- */
   clistdd = "lc"random(999)
   execdd  = "le"random(999)
   msgdd   = "lm"random(999)
   paneldd = "lp"random(999)
   skeldd  = "ls"random(999)
 
-/* ---------------------------------------- *
- *  LmInit and LmOpen each resource library *
- * ---------------------------------------- */
+  /* ---------------------------------------- *
+  *  LmInit and LmOpen each resource library *
+  * ---------------------------------------- */
   if kclist <> null then do
     call alloc_dd clistdd
     "Lminit dataid(clist) ddname("clistdd")"
@@ -1098,9 +1251,9 @@ LoadISPF: Procedure
     returns = strip(returns skeldd 'ISPSLIB')
   end
 
-/* ----------------------------------------------- *
- * Process all records in the data. stem variable. *
- * ----------------------------------------------- */
+  /* ----------------------------------------------- *
+  * Process all records in the data. stem variable. *
+  * ----------------------------------------------- */
   do i = 1 to rec
     record = data.i
     recordu = translate(record)
@@ -1140,7 +1293,7 @@ LoadISPF: Procedure
       parse value record with x name
       iterate
     end
-   /* --------------------------------------------*
+    /* --------------------------------------------*
     * Put the record into the appropriate library *
     * based on the record type.                   *
     * ------------------------------------------- */
@@ -1163,10 +1316,10 @@ LoadISPF: Procedure
     end
   end
   if type <> null then call add_it
-/* ---------------------------------------------------- *
- * Processing completed - now lmfree the allocation and *
- * Libdef the library.                                  *
- * ---------------------------------------------------- */
+  /* ---------------------------------------------------- *
+  * Processing completed - now lmfree the allocation and *
+  * Libdef the library.                                  *
+  * ---------------------------------------------------- */
   if kclist <> null then do
     Address TSO,
       "Altlib Act Application(Clist) File("clistdd")"
@@ -1191,10 +1344,10 @@ LoadISPF: Procedure
   end
   return returns
 
-/* --------------------------- *
- * Add the Member using LmmAdd *
- * based upon type of resource *
- * --------------------------- */
+  /* --------------------------- *
+  * Add the Member using LmmAdd *
+  * based upon type of resource *
+  * --------------------------- */
 Add_It:
   Select
     When type = "Clist" then
@@ -1212,9 +1365,9 @@ Add_It:
   type = null
   return
 
-/* ------------------------------ *
- * ALlocate the temp ispf library *
- * ------------------------------ */
+  /* ------------------------------ *
+  * ALlocate the temp ispf library *
+  * ------------------------------ */
 Alloc_DD:
   arg dd
   Address TSO
@@ -1226,14 +1379,14 @@ Alloc_DD:
     "recfm(f b) lrecl(80) blksize(23440)"
   return
 
-/* --------------------------- *
- | The start for inline panels |
- * --------------------------- */
+  /* --------------------------- *
+  | The start for inline panels |
+  * --------------------------- */
 >Start
 >Panel #zs
 )ATTR DEFAULT(@$_)
 @   TYPE(TEXT)  INTENS(HIGH) SKIP(ON)
-$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON)
+$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON) Color(Green)
 _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )BODY EXPAND(\\)
 @Tutorial$-\-\(@zSync$)-\-\@Tutorial
@@ -1245,6 +1398,7 @@ $
 @
 @  @COpy$   Copy all eligible members in the list
 $           a non-blank option simulates the Copy
+$  @Flip$   Alias of ZSwap
 $  @Locate$ Locate a member in the list (partial name allowed)
 $  @Only$   Display only copy eligible members
 $  @Refresh$Refresh the member list after use of Only or X
@@ -1256,7 +1410,6 @@ $
 $   Note: Copy messages are placed in the ISPF Log dataset.
 $
 $
-$
 $ \ \ (press@ENTER$to continue) \ \
 )INIT
  &zcont = #zs1
@@ -1265,7 +1418,7 @@ $ \ \ (press@ENTER$to continue) \ \
 >Panel #zs1
 )ATTR DEFAULT(@$_)
 @   TYPE(TEXT)  INTENS(HIGH) SKIP(ON)
-$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON)
+$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON) Color(Green)
 _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )BODY EXPAND(\\)
 @Tutorial$-\-\(@zSync$)-\-\@Tutorial
@@ -1298,7 +1451,7 @@ $ \ \ (press@ENTER$to continue) \ \
 >Panel #zs2
 )ATTR DEFAULT(@$_)
 @   TYPE(TEXT)  INTENS(HIGH) SKIP(ON)
-$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON)
+$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON) Color(Green)
 _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )BODY EXPAND(\\)
 @Tutorial$-\-\(@zSync$)-\-\@Tutorial
@@ -1331,7 +1484,7 @@ $ \ \ (press@ENTER$to continue) \ \
 >Panel #zs3
 )ATTR DEFAULT(@$_)
 @   TYPE(TEXT)  INTENS(HIGH) SKIP(ON)
-$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON)
+$   TYPE(TEXT)  INTENS(LOW)  SKIP(ON) Color(Green)
 _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )BODY EXPAND(\\)
 @Tutorial$-\-\(@zSync$)-\-\@Tutorial
@@ -1364,15 +1517,16 @@ $ \ \ (press@ENTER$to continue) \ \
 >Panel zSync
 )Attr Default(@+_)
 $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
-+ type(text) intens(low)
-# type(output) intens(low)
++ type(text) intens(low) Color(Green)
+# type(output) intens(low) hilite(reverse)
+_   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )Body expand(\\)
 @-\-\+zSync Dataset Prompt#zver@\-\-
 @Command ===>_zcmd
 +
 +From PDS Dataset: $frompds                                       +
 +To   PDS Dataset: $topds                                         +
-+Member Pattern:   $mempat  +
++Member Pattern:   $mempat  +   (not supported when RECFM=U)
 +Ignore ISPF Stats:$z+   Yes or No
 +
 +Compare two PDS Libraries and identify differences between From
@@ -1411,7 +1565,8 @@ $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 )Attr Default(%+_)
 @ type(output) intens(high)  caps(off) just(left )
 $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
-+ type(text) intens(low)
++ type(text) intens(low) color(green)
+_   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )Body window(56,5) expand(\\)
 %-\-\+zSync Progress%\-\-
 +
@@ -1425,7 +1580,7 @@ $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 )Attr Default(%+_)
 @ type(text  ) intens(high)  caps(off) just(left )
 $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
-+ type(text) intens(low)
++ type(text) intens(low) color(Green)
 )Body window(56,17) expand(\\)
 %-\-\+zSync Selection Prompt%\-\-
 %Option ===>_zcmd
@@ -1453,20 +1608,44 @@ $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 )Attr Default(%+_)
 @ type(output) intens(high)  caps(off) just(left )
 $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
-+ type(text) intens(low)
-)Body window(57,14) expand(\\)
++ type(text) intens(low) Color(Green)
+)Body window(44,14) expand(\\)
 %-\-\+zSync Member Info%\-\-
 %Command ===>_zcmd
 +
-+               Member Name:   @mem
-+From                           To
-+Create Date:  @fcdate         +Create Date:  @tcdate
-+Mod Date:     @fmdate         +Mod Date:     @tmdate
-+Mod Time:     @fmtime         +Mod Time:     @tmtime
-+Size:         @fcnorc         +Size:         @tcnorc
-+Ver:          @fvers          +Ver:          @tvers
-+Mod:          @fmod           +Mod:          @tmod
-+User:         @fuser          +User:         @tuser
++Member Name:  @mem
++From                            To
++Create Date:  @fcdate         +@tcdate
++Mod Date:     @fmdate         +@tmdate
++Mod Time:     @fmtime         +@tmtime
++Size:         @fcnorc         +@tcnorc
++Ver:          @fvers          +@tvers
++Mod:          @fmod           +@tmod
++User:         @fuser          +@tuser
++
++ \ \ (press%ENTER+to Continue) \ \
+)Init
+ .help = #zs
+)Proc
+)End
+>Panel zcispfu
+)Attr Default(%+_)
+@ type(output) intens(high)  caps(off) just(left )
+$ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
++ type(text) intens(low) Color(Green)
+_   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
+)Body window(44,13) expand(\\)
+%-\-\+zSync Member Info%\-\-
+%Command ===>_zcmd
++
++Member Name:  @mem
++From                            To
++Size:         @flsize         +@tlsize
++AMODE:        @flamode        +@tlamode
++RMODE:        @flrmode        +@tlrmode
++LE Attributes:@flattr         +@tlattr
++Alias:        @flalias        +@tlalias
++SSI:          @flssi          +@tlssi
 +
 + \ \ (press%ENTER+to Continue) \ \
 )Init
@@ -1476,9 +1655,9 @@ $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 >Panel zSynct
 )Attr Default(%+_)
   @ type(output) intens(high) just(left ) caps(off)
-  # type(output) intens(low)  just(left ) caps(off)
+  # type(output) intens(low)  just(left ) caps(off) Color(Green)
   $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
-  + type(text) intens(low)
+  + type(text) intens(low) Color(Green)
   _ type(input) intens(high) caps(on) hilite(uscore)
 )Body  expand(\\)
 %-\-\+zSync Member List#zver%\-\-
