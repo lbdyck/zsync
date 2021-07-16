@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '3.1'
+  zver = '3.3'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -76,6 +76,10 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            07/16/21 - Version 3.3                          |
+  |                     - Correct residual stem info on CS     |
+  |            06/28/21 - Version 3.2                          |
+  |                     - Fix SRCHME to SRCHMEM (fat fingers)  |
   |            07/01/20 - Version 3.1                          |
   |                     - Add FLIP as alias of zswap           |
   |                     - Use SuperC if ALL option or          |
@@ -568,7 +572,7 @@ Refresh:
       When abbrev('LOCATE',word(zcmd,1),1) = 1 then do
         'tbtop' stats
         srchmem = word(zcmd,2)
-        if srchme = null then do
+        if srchmem = null then do
           zerrsm = 'Invalid'
           zerrlm = 'No Locate member provided'
           'Setmsg msg(isrz002)'
@@ -583,7 +587,7 @@ Refresh:
           if mem >= srchmem then do
             crp = newcrp
             zerrsm = 'Located'
-            zerrlm = srchme 'located'
+            zerrlm = srchmem 'located'
             'Setmsg msg(isrz002)'
             leave
           end
@@ -900,6 +904,7 @@ Refresh:
           Address TSO
           call outtrap 'x.'
           'Free f(olddd newdd outdd)'
+          drop in.
           call outtrap 'off'
           oldds = fixup_dsn(frompds)
           newds = fixup_dsn(topds)
