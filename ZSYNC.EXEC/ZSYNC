@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '3.3'
+  zver = '3.4'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -76,6 +76,8 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            07/19/21 - Version 3.4                          |
+  |                     - Correct superc lrecl to 125          |
   |            07/16/21 - Version 3.3                          |
   |                     - Correct residual stem info on CS     |
   |            06/28/21 - Version 3.2                          |
@@ -911,7 +913,7 @@ Refresh:
           'alloc f(olddd) ds('oldds') shr reuse'
           'alloc f(newdd) ds('newds') shr reuse'
           'alloc f(outdd) new spa(15,15) tr reuse' ,
-            'recfm(v b) lrecl(121) blksize(0) unit(sysda)'
+            'recfm(v b) lrecl(125) blksize(0) unit(sysda)'
           Address ISPexec ,
             'Select PGM(isrsupc) Parm(DELTAL,LINECMP)'
           'execio * diskr outdd (finis stem in.'
@@ -935,7 +937,7 @@ Refresh:
               Address TSO
               bdd = 'zsyn'random(9999)
               'alloc f('bdd') unit(sysda) space(5,5) tr' ,
-                'recfm(v b a) lrecl(121) blksize(0)'
+                'recfm(v b a) lrecl(125) blksize(0)'
               'execio * diskw' bdd '(finis stem in.'
               Address ISPExec
               "LMINIT DATAID(lmb) DDNAME("bdd")"
