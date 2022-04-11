@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '3.4'
+  zver = '3.5'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -76,6 +76,9 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            04/11/22 - Version 3.5                          |
+  |                     - Add Display Delta Only to Prompt     |
+  |                       panel                                |
   |            07/19/21 - Version 3.4                          |
   |                     - Correct superc lrecl to 125          |
   |            07/16/21 - Version 3.3                          |
@@ -265,6 +268,13 @@ Check_dsns:
     tlrecl = 'To DCB:  ' to_recfm to_lrecl
     trwarn = 'Truncation Warning'
   end
+
+  if donly = 'Y' then opt = opt 'ONLY'
+  else do
+       p = wordpos('ONLY',opt)
+       if p = 0 then leave
+       opt = delword(opt,p,1)
+       end
 
   /* --------------------------------- *
   | Restart here if refresh requested |
@@ -1531,10 +1541,11 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 @-\-\+zSync Dataset Prompt#zver@\-\-
 @Command ===>_zcmd
 +
-+From PDS Dataset: $frompds                                       +
-+To   PDS Dataset: $topds                                         +
-+Member Pattern:   $mempat  +   (not supported when RECFM=U)
-+Ignore ISPF Stats:$z+   Yes or No
++From PDS Dataset:  $frompds                                       +
++To   PDS Dataset:  $topds                                         +
++Member Pattern:    $mempat  +   (not supported when RECFM=U)
++Ignore ISPF Stats: $z+   Yes or No
++Display Delta Only:$z+   Yes or No
 +
 +Compare two PDS Libraries and identify differences between From
 +and To libraries to simplify copying new/changed members.
@@ -1543,18 +1554,19 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 +                 * = multiple characters
 +                 % = single character
 +
-+Note: If the From PDS LRECL is greater than the To PDS LRECL then
-+      DCB information on the From and To libraries will be presented on
-+      the member display.  This does not guarantee a truncation will
-+      occur as that depends on the actual data. Just be aware before
-+      doing a copy in this situation.
++Note: If the From PDS LRECL is greater than the To PDS LRECL then DCB
++      information on the From and To libraries will be presented on the member
++      display.  This does not guarantee a truncation will occur as that
++      depends on the actual data. Just be aware before doing a copy.
 +
 + \ \ (press@ENTER+to Continue@PF3+to Cancel) \ \
 )Init
- .zvars = '(igstats)'
+ .zvars = '(igstats donly)'
  vget (frompds topds) profile
  if (&igstats = &z)
      &igstats = 'N'
+ if (&donly   = &z)
+     &donly   = 'N'
  if (&frompds = &z)
      .cursor = frompds
  if (&frompds NE &z)
@@ -1567,6 +1579,7 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
  ver (&frompds,nb,dsnameq)
  ver (&topds,nb,dsnameq)
  ver (&igstats,nb,list,Y,N)
+ ver (&donly,nb,list,Y,N)
 )End
 >Panel zSynProg
 )Attr Default(%+_)
