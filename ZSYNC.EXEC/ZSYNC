@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '3.5'
+  zver = '3.6'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -76,6 +76,8 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            04/13/22 - Version 3.6                          |
+  |                     - Fix logic error                      |
   |            04/11/22 - Version 3.5                          |
   |                     - Add Display Delta Only to Prompt     |
   |                       panel                                |
@@ -272,7 +274,7 @@ Check_dsns:
   if donly = 'Y' then opt = opt 'ONLY'
   else do
        p = wordpos('ONLY',opt)
-       if p = 0 then leave
+       if p > 0 then
        opt = delword(opt,p,1)
        end
 
