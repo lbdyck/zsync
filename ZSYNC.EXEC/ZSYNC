@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '3.7'
+  zver = '3.8'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -76,6 +76,8 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            08/12/22 - Version 3.8                          |
+  |                     - Enhance Compare on size              |
   |            07/22/22 - Version 3.7                          |
   |                     - Fix Only on command line             |
   |            04/13/22 - Version 3.6                          |
@@ -397,8 +399,8 @@ Refresh:
         ecount = ecount + 1
       end
       else do
-        parse value from.mem with fdate ftime fcdate fctime fv vm fl .
-        parse value to.mem   with tdate ttime tcdate tctime tv tm tl .
+        parse value from.mem with fdate ftime fcdate fv vm fl .
+        parse value to.mem   with tdate ttime tcdate tv tm tl .
         if ignore_stats = 1
         then parse value '' with fdate ftime tdate ttime
         Select
@@ -421,14 +423,17 @@ Refresh:
             cr = 'From Date newer than To Date'
             crf = 1
             ecount = ecount + 1
+            call check_records
           end
           When fdate < tdate then do
             cr = 'To Date newer than From Date'
+            call check_records
           end
           When tdate = null then do
             cr = 'To Date is blank'
             crf = 1
             ecount = ecount + 1
+            call check_records
           end
           When fdate = tdate then do
             if ftime > ttime then do
@@ -436,9 +441,13 @@ Refresh:
                 'To Date/Time'
               crf = 1
               ecount = ecount + 1
+              call check_records
             end
-            if ftime < ttime then cr = 'To Date/Time is newer than' ,
-              'From Date/Time'
+            if ftime < ttime then do
+               cr = 'To Date/Time is newer than' ,
+                 'From Date/Time'
+              call check_records
+              end
           end
           Otherwise nop
         end
@@ -1015,6 +1024,15 @@ Done:
     end
   end
   Exit 0
+
+Check_Records:
+  if tl = fl then return
+  crf = 1
+  ecount = ecount + 1
+  if tl > fl
+    then cr = cr', To has more records'
+    else cr = cr', From has more records'
+  return
 
 Get_Stats: Procedure Expose sysrecfm
   arg statmem statpds
