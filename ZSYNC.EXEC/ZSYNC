@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '3.8'
+  zver = '3.9'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -76,6 +76,8 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            09/15/22 - Version 3.9                          |
+  |                     - Correct Counter for changed          |
   |            08/12/22 - Version 3.8                          |
   |                     - Enhance Compare on size              |
   |            07/22/22 - Version 3.7                          |
@@ -423,17 +425,18 @@ Refresh:
             cr = 'From Date newer than To Date'
             crf = 1
             ecount = ecount + 1
-            call check_records
+            x = check_records()
           end
           When fdate < tdate then do
             cr = 'To Date newer than From Date'
-            call check_records
+            x = check_records()
+            if x > 0 then ecount = ecount + 1
           end
           When tdate = null then do
             cr = 'To Date is blank'
             crf = 1
             ecount = ecount + 1
-            call check_records
+            x = check_records()
           end
           When fdate = tdate then do
             if ftime > ttime then do
@@ -441,7 +444,7 @@ Refresh:
                 'To Date/Time'
               crf = 1
               ecount = ecount + 1
-              call check_records
+              x = check_records()
             end
             if ftime < ttime then do
                cr = 'To Date/Time is newer than' ,
@@ -1026,13 +1029,12 @@ Done:
   Exit 0
 
 Check_Records:
-  if tl = fl then return
+  if tl = fl then return 0
   crf = 1
-  ecount = ecount + 1
   if tl > fl
     then cr = cr', To has more records'
     else cr = cr', From has more records'
-  return
+  return 1
 
 Get_Stats: Procedure Expose sysrecfm
   arg statmem statpds
