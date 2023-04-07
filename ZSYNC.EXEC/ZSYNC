@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '3.9'
+  zver = '4.1'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -36,6 +36,10 @@
   |                     converted to CS if RECFM=U             |
   |           CD      - Compare using SuperC                   |
   |           CS      - Compare using SuperC and View Results  |
+  |           CF      - Compare using ISPF Edit Compare        |
+  |                     editing the From member                |
+  |           CT      - Compare using ISPF Edit Compare        |
+  |                     editing the To member                  |
   |           E       - Edit from member                       |
   |           ET      - Edit to member                         |
   |           I       - Display From/To ISPF Stats             |
@@ -76,6 +80,10 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            04/07/23 - Version 4.1                          |
+  |                     - Fix typo on execio (superc)          |
+  |            01/23/23 - Version 4.0                          |
+  |                     - Add CF and CT options                |
   |            09/15/22 - Version 3.9                          |
   |                     - Correct Counter for changed          |
   |            08/12/22 - Version 3.8                          |
@@ -471,7 +479,7 @@ Refresh:
       o.0 = 1
       'alloc f(sysin) new spa(1,1) tr recfm(f b) lrecl(80)' ,
         'blksize(6160)'
-      'execio * diskw sysin (finis sem o.'
+      'execio * diskw sysin (finis stem o.'
     end
     Address ISPExec ,
       'Select pgm(isrsupc) parm(OVSUML,LINECMP,NOSEQ)'
@@ -891,7 +899,7 @@ Refresh:
       | Compare the member (from/to)using the ISPF Edit |
       | Compare command with eXclude                    |
       * ----------------------------------------------- */
-      When csel = 'C' then do
+      When wordpos(csel,'C CF') > 0 then do
         if pos('Not in',cr) > 0 then do
           zerrsm = 'Not Supported'
           zerrlm = 'Member' mem 'is not in the To PDS so it cannot' ,
@@ -914,6 +922,35 @@ Refresh:
           else crf = 0
           'tbput' stats
           "LMClose Dataid("fromid")"
+        end
+      end
+      /* ----------------------------------------------- *
+      | Compare the member (to/from)using the ISPF Edit |
+      | Compare command with eXclude                    |
+      * ----------------------------------------------- */
+      When csel = 'CT' then do
+        if pos('Not in',cr) > 0 then do
+          zerrsm = 'Not Supported'
+          zerrlm = 'Member' mem 'is not in the To PDS so it cannot' ,
+            'be compared.'
+          'Setmsg Msg(isrz002)'
+        end
+        else do
+          oldds = fixup_dsn(topds)
+          parm  = fixup_dsn(frompds)
+          parm = parm oldds
+          "LMINIT DATAID(toid) DATASET("topds")"
+          "LMOPEN DATAID("toid") OPTION(INPUT)"
+          'Control Display Save'
+          'edit dataid('toid') member('mem') macro(zsyncm)' ,
+            'parm(parm)'
+          'Control Display Restore'
+          'vget (xcr)'
+          cr = xcr
+          if xcr = 'Delta' then crf = 1
+          else crf = 0
+          'tbput' stats
+          "LMClose Dataid("toid")"
         end
       end
       /* ------------------------------------------- *
@@ -1474,9 +1511,10 @@ $
 @
 @  @B$      - Browse the From member
 $  @BT$     - Browse the To member
-$  @C$      - ISPF Edit Compare
+$  @C$      - ISPF Edit Compare - alias@CF$
 $  @CD$     - SuperC Compare
 $  @CS$     - SuperC Compare and View
+$  @CT$     - ISPF Edit Compare To member
 $  @E$      - Edit the From member
 $  @ET$     - Edit the To member
 $  @I$      - ISPF Stats
@@ -1484,7 +1522,6 @@ $  @S$or@/$ - Display Selection prompt
 $  @X$      - Exclude the member
 $  @Z$      - Copy member
 $  @=$      - Repeat previous selection
-$
 $
 $ \ \ (press@ENTER$to continue) \ \
 )INIT
@@ -1628,7 +1665,7 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 @ type(text  ) intens(high)  caps(off) just(left )
 $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 + type(text) intens(low) color(Green)
-)Body window(56,17) expand(\\)
+)Body window(60,18) expand(\\)
 %-\-\+zSync Selection Prompt%\-\-
 %Option ===>_zcmd
 +
@@ -1636,9 +1673,10 @@ $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 +
 + @B+  - Browse the From member
 + @BT+ - Browse the To member
-+ @C+  - Compare the members using ISPF Edit Compare
++ @C+  - Compare the members using ISPF Edit Compare (@CF+)
 + @CD+ - Compare members using SuperC
 + @CS+ - Compare members using SuperC and View Results
++ @CT+ - Compare the To member to the From using ISPF Edit
 + @E+  - Edit the From member
 + @ET+ - Edit the To member
 + @I+  - Display ISPF Stats
@@ -1723,7 +1761,7 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
  if (&amt = &z)
      &amt  = csr
 )Proc
- ver (&csel,list,I,X,C,B,BT,E,ET,CD,CS,/,S,Z,'=')
+ ver (&csel,list,I,X,C,B,BT,E,ET,CF,CT,CD,CS,/,S,Z,'=')
  &amt = trans(trunc(&amt,1),H,HALF,C,CSR,P,PAGE,*,*)
 )Field
  Field(cr) ind(mpind,'<>') len(255) scale(lr1sc)
