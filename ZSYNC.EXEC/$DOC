@@ -50,7 +50,7 @@ The syntax is:
 The from and to partitioned data set names are optional and if not
 provided the user will be prompted for them.
 
- The option must follow the \ and may be:
+Any option must follow the \ and may be:
 
         valid options:
 
