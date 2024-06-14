@@ -6,6 +6,9 @@ partitioned data sets. The user will be presented with a ISPF table with
 all listed members along with the state of each member. The state will
 indicate if the member is eligible to be copied.
 
+With the ISPF Dialog there is an option to enter the volsers for the
+from and to datatsets. This is not available using the command.
+
 All default comparisons to determine copy eligibility are done using
 ISPF Services.  If either, or both, members have no ISPF stats then the
 members are compared using the ISPF Edit compare and the state and copy
@@ -41,7 +44,7 @@ The available line selection options are:
     CS      - Check for Delta using SuperC Compare and View results
     E       - Edit the From member
     ET      - Edit the To member
-    I       - ISPF Statspare
+    I       - ISPF Stats
     S or /  - Display Selection prompt
     X       - Exclude the member
     Z       - Copy selected member
