@@ -83,8 +83,10 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
-  |            06/13/24 - Version 5.0                          |
+  |            06/15/24 - Version 5.0                          |
   |                     - Update loadispf/dropispf routines    |
+  |                     - Improve color for trunc warning      |
+  |                     - Fixup to fully support volsers       |
   |            05/30/23 - Version 4.2                          |
   |                     - Update loadispf/dropispf routines    |
   |            04/07/23 - Version 4.1                          |
@@ -275,6 +277,10 @@ Check_dsns:
   dsntok = 1
   if (dsnfok + dsntok) /= 2 then call check_dsns
 
+  /* --------------------------------- *
+  | Restart here if refresh requested |
+  * --------------------------------- */
+Refresh:
   /* ----------------------------------------------------- *
   | Verify that the FromPDS and ToPDS are supported by    |
   | LMMLIST. No VSAM, No Sequential, only RECFM F or V.   |
@@ -321,8 +327,8 @@ Check_dsns:
 
   if from_lrecl > to_lrecl then do
     flrecl = 'From DCB:' from_recfm from_lrecl
-    tlrecl = 'To DCB:  ' to_recfm to_lrecl
-    trwarn = 'Truncation Warning'
+    tlrecl = 'To DCB:' to_recfm to_lrecl
+    trwarn = 'Truncation Warning' flrecl tlrecl
   end
 
   if donly = 'Y' then opt = opt 'ONLY'
@@ -331,11 +337,6 @@ Check_dsns:
     opt = delword(opt,p,1)
     donly = 'Y'
   end
-
-  /* --------------------------------- *
-  | Restart here if refresh requested |
-  * --------------------------------- */
-Refresh:
   parse value '' with frommems tomems mem to. from. zcmd
   'vput (frompds topds fvol tvol) profile'
   /* ------------------ *
@@ -1845,17 +1846,17 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )Attr Default(%+_)
   @ type(output) intens(high) just(left ) caps(off)
   # type(output) intens(low)  just(left ) caps(off) Color(Green)
-  $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
+  $ type(output) intens(high) caps(off) just(left ) color(red)
   + type(text) intens(low) Color(Green)
   _ type(input) intens(high) caps(on) hilite(uscore)
 )Body  expand(\\)
 %-\-\+zSync Member List#zver%\-\-
 %Command ===>_zcmd                                            %Scroll ===>_amt +
 +
-%   From:#frompds                                          +Vol:#fvol  #flrecl
-%     To:@topds                                            +Vol:@tvol  @tlrecl
-%Pattern:#mempat                                           #trwarn
-+
+%   From:#frompds                                          +Vol:#fvol
+%     To:@topds                                            +Vol:@tvol
+%Pattern:#mempat
++        $trwarn
 % Sel   Member    State
 )Model
  +_z + #z        @z
