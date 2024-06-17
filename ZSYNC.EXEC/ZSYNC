@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '4.1'
+  zver = '5.0'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -11,6 +11,9 @@
   |                                                            |
   |            The successful copy information will be         |
   |            written to the ISPF Log.                        |
+  |                                                            |
+  |            Optional volsers are allowed, via the Panel     |
+  |            for the from and to libraries.                  |
   |                                                            |
   | Commands:                                                  |
   |           COPY    - Copy all members that are different or |
@@ -80,10 +83,20 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            06/15/24 - Version 5.0                          |
+  |                     - Update loadispf/dropispf routines    |
+  |                     - Improve color for trunc warning      |
+  |                     - Fixup to fully support volsers       |
+  |            05/30/23 - Version 4.2                          |
+  |                     - Update loadispf/dropispf routines    |
   |            04/07/23 - Version 4.1                          |
   |                     - Fix typo on execio (superc)          |
   |            01/23/23 - Version 4.0                          |
   |                     - Add CF and CT options                |
+  |            12/13/22 - Version 4.0                          |
+  |                     - Support from/to volsers              |
+  |                     - Correct SuperC compare               |
+  |                     - Remove 'Not in From' if Only         |
   |            09/15/22 - Version 3.9                          |
   |                     - Correct Counter for changed          |
   |            08/12/22 - Version 3.8                          |
@@ -211,7 +224,14 @@
   Address ISPEXEC
   load_info = loadispf()
   'vput (frompds topds) profile'
+  if frompds /= null then do
+     fvol = null
+     end
+  if topds /= null then do
+     tvol = null
+     end
   'Control Errors Return'
+  'vput (tvol fvol) shared'
 
   /* --------------------------------------- *
   | Check for From and To PDS Dataset Names |
@@ -222,7 +242,16 @@ Check_dsns:
   if frompds =  null then call prompt
   if topds   =  null then call prompt
 
-  do while sysdsn(frompds) /= 'OK'
+  if fvol /= null then do
+     x = listdsi(frompds 'volume('fvol')')
+     if x > 4 then do
+        zerrsm = 'FromPDS Error'
+        zerrlm = frompds sysmsglvl2
+        'Setmsg Msg(isrz002)'
+        call prompt
+        end
+     end
+  else do while sysdsn(frompds) /= 'OK'
     zerrsm   = 'FromPDS Error'
     zerrlm   = frompds sysdsn(frompds)
     'Setmsg Msg(isrz002)'
@@ -230,7 +259,16 @@ Check_dsns:
   end
   dsnfok = 1
 
-  do while sysdsn(topds) /= 'OK'
+  if tvol /= null then do
+     x = listdsi(topds 'volume('tvol')')
+     if x > 4 then do
+        zerrsm = 'ToPDS Error'
+        zerrlm = topds sysmsglvl2
+        'Setmsg Msg(isrz002)'
+        call prompt
+        end
+     end
+  else do while sysdsn(topds) /= 'OK'
     zerrsm   = 'ToPDS Error'
     zerrlm   = topds sysdsn(topds)
     'Setmsg Msg(isrz002)'
@@ -239,12 +277,18 @@ Check_dsns:
   dsntok = 1
   if (dsnfok + dsntok) /= 2 then call check_dsns
 
+  /* --------------------------------- *
+  | Restart here if refresh requested |
+  * --------------------------------- */
+Refresh:
   /* ----------------------------------------------------- *
   | Verify that the FromPDS and ToPDS are supported by    |
   | LMMLIST. No VSAM, No Sequential, only RECFM F or V.   |
   | If RECFM = U then set ignore_stats = 1                |
   * ----------------------------------------------------- */
-  call listdsi frompds
+  if fvol /= null
+     then x = listdsi(frompds 'VOLUME('fvol') DIR')
+     else x = listdsi(frompds 'DIR')
   from_lrecl = syslrecl
   from_recfm = sysrecfm
   if sysrecfm = 'U' then ignore_stats = 1
@@ -261,7 +305,9 @@ Check_dsns:
     call prompt
   end
 
-  x = listdsi(topds 'DIR')
+  if tvol /= null
+     then x = listdsi(topds 'VOLUME('tvol') DIR')
+     else x = listdsi(topds 'DIR')
   to_lrecl = syslrecl
   to_recfm = sysrecfm
   if sysrecfm = 'U' then ignore_stats = 1
@@ -281,8 +327,8 @@ Check_dsns:
 
   if from_lrecl > to_lrecl then do
     flrecl = 'From DCB:' from_recfm from_lrecl
-    tlrecl = 'To DCB:  ' to_recfm to_lrecl
-    trwarn = 'Truncation Warning'
+    tlrecl = 'To DCB:' to_recfm to_lrecl
+    trwarn = 'Truncation Warning' flrecl tlrecl
   end
 
   if donly = 'Y' then opt = opt 'ONLY'
@@ -291,13 +337,8 @@ Check_dsns:
     opt = delword(opt,p,1)
     donly = 'Y'
   end
-
-  /* --------------------------------- *
-  | Restart here if refresh requested |
-  * --------------------------------- */
-Refresh:
   parse value '' with frommems tomems mem to. from. zcmd
-  'vput (frompds topds) profile'
+  'vput (frompds topds fvol tvol) profile'
   /* ------------------ *
   | Create stats table |
   * ------------------ */
@@ -310,8 +351,14 @@ Refresh:
   /* -------------------------------- *
   | LMInit the From and To Libraries |
   * -------------------------------- */
-  "LMINIT DATAID(fromid) DATASET("frompds")"
-  "LMINIT DATAID(toid) DATASET("topds")"
+  if fvol /= null
+     then finit = 'VOLUME('fvol')'
+     else finit = null
+  if tvol /= null
+     then tinit = 'VOLUME('tvol')'
+     else tinit = null
+  "LMINIT DATAID(fromid) DATASET("frompds")" finit
+  "LMINIT DATAID(toid) DATASET("topds")" tinit
 
   /* ---------------- *
   | Progress Display |
@@ -472,30 +519,51 @@ Refresh:
   else do
     Address TSO
     'Alloc f(outdd) spa(15,15) tr new reuse'
-    'alloc f(newdd) shr reuse ds('topds')'
-    'alloc f(olddd) shr reuse ds('frompds')'
+    if tvol = null
+       then atvol = null
+       else atvol = 'vol('tvol')'
+    if fvol = null
+       then afvol = null
+       else afvol = 'vol('fvol')'
+    'alloc f(newdd) shr reuse ds('topds')' atvol
+    'alloc f(olddd) shr reuse ds('frompds')' afvol
+    call outtrap 'x.'
+    'free  f(sysin)'
+    call outtrap 'off'
+    alloc_sysin = 0
+    if pos('*',mempat) = 0 then
     if strip(mempat) /= null then do
       o.1 = 'SELECT' mempat
       o.0 = 1
       'alloc f(sysin) new spa(1,1) tr recfm(f b) lrecl(80)' ,
         'blksize(6160)'
       'execio * diskw sysin (finis stem o.'
+      alloc_sysin = 1
     end
     Address ISPExec ,
       'Select pgm(isrsupc) parm(OVSUML,LINECMP,NOSEQ)'
     'Execio * diskr outdd (finis stem in.'
     'Free f(outdd newdd olddd)'
-    if strip(mempat) /= null then 'Free f(sysin)'
+    if alloc_sysin = 1 then 'Free f(sysin)'
     Address ISPExec
     np = 0
     cr = 'Delta'
     ecount = 0
+
+    if pos('*',mempat) > 0 then do
+       mempl = pos('*',mempat) - 1
+       mempat = left(mempat,mempl)
+       end
+    else mempl = 0
 
     do i = 1 to in.0
       if left(in.i,1) = '1' then iterate
       if word(in.i,1) = 'NEW:' then iterate
       if left(in.i,3) = ' **' then do
         mem = word(in.i,2)
+        if mempl > 0
+           then if left(mem,mempl) /= mempat
+              then iterate
         crf = 1
         'tbadd' stats
         ecount = ecount + 1
@@ -509,13 +577,20 @@ Refresh:
         parse value in.i with . 9 memto 17 . 49   memfrom 57 .
         if strip(memto) /= null then do
           mem = strip(memto)
+          if mempl > 0
+             then if left(mem,mempl) /= mempat
+                then iterate
           cr = 'Not in From PDS'
           crf = 1
+          if donly = 'y' then iterate
           'tbadd' stats
           ecount = ecount + 1
         end
         if strip(memfrom) /= null then do
           mem = strip(memfrom)
+          if mempl > 0
+             then if left(mem,mempl) /= mempat
+                then iterate
           cr = 'Not in To PDS'
           crf = 1
           'tbadd' stats
@@ -726,7 +801,6 @@ Refresh:
         'Control Display Save'
         'Edit dataset('reportds')'
         'Control Display Restore'
-        'control display restore'
       end
       /* ------------------------------------- *
       | Refresh routine                       |
@@ -752,8 +826,11 @@ Refresh:
         "LMFree  Dataid("fromid")"
         "LMFree  Dataid("toid")"
         ofrompds = frompds
+        ofvol    = fvol
         frompds  = topds
+        fvol     = tvol
         topds    = ofrompds
+        tvol     = ofvol
         signal Refresh
       end
       /* ------------------------------------------------- *
@@ -817,9 +894,9 @@ Refresh:
       * ----------------------------------------------------------- */
       When csel = 'I' then do
         if ignore_stats = 1 then do
-          ispf_stats = get_stats(mem frompds)
+          ispf_stats = get_stats(mem frompds fvol)
           from.mem = ispf_stats
-          ispf_stats = get_stats(mem topds)
+          ispf_stats = get_stats(mem topds tvol)
           to.mem = ispf_stats
         end
         'control display save'
@@ -853,9 +930,8 @@ Refresh:
       | Browse the From member |
       * ---------------------- */
       When csel = 'B' then do
-        oldds = fixup_dsn(frompds)
         'Control Display Save'
-        'Browse Dataset('oldds')'
+        'Browse Dataid('fromid') Member('mem')'
         'Control Display Restore'
         if zerrsm /= null then 'setmsg msg(isrz003)'
       end
@@ -865,9 +941,8 @@ Refresh:
       | Edit the selected member |
       * ------------------------ */
       When csel = 'E' then do
-        oldds = fixup_dsn(frompds)
         'Control Display Save'
-        'Edit Dataset('oldds')'
+        'Edit Dataid('fromid') Member('mem')'
         'Control Display Restore'
         if zerrsm /= null then 'setmsg msg(isrz003)'
       end
@@ -877,9 +952,8 @@ Refresh:
       | Browse the To member |
       * -------------------- */
       When csel = 'BT' then do
-        newds = fixup_dsn(topds)
         'Control Display Save'
-        'Browse Dataset('newds')'
+        'Browse Dataid('toid') Member('mem')'
         'Control Display Restore'
         if zerrsm /= null then 'setmsg msg(isrz003)'
       end
@@ -889,9 +963,8 @@ Refresh:
       | Edit the To member |
       * ------------------ */
       When csel = 'ET' then do
-        newds = fixup_dsn(topds)
         'Control Display Save'
-        'Edit Dataset('newds')'
+        'Edit Dataid('toid') Member('mem')'
         'Control Display Restore'
         if zerrsm /= null then 'setmsg msg(isrz003)'
       end
@@ -908,9 +981,14 @@ Refresh:
         end
         else do
           oldds = fixup_dsn(frompds)
+          if fvol /= null
+             then finit = 'VOLUME('fvol')'
+             else finit = null
           parm  = fixup_dsn(topds)
-          parm = parm oldds
-          "LMINIT DATAID(fromid) DATASET("frompds")"
+          if tvol /= null then
+             parm = parm 'VOL('tvol')'
+          parm = parm '/' oldds
+          "LMINIT DATAID(fromid) DATASET("frompds")" finit
           "LMOPEN DATAID("fromid") OPTION(INPUT)"
           'Control Display Save'
           'edit dataid('fromid') member('mem') macro(zsyncm)' ,
@@ -976,8 +1054,14 @@ Refresh:
           call outtrap 'off'
           oldds = fixup_dsn(frompds)
           newds = fixup_dsn(topds)
-          'alloc f(olddd) ds('oldds') shr reuse'
-          'alloc f(newdd) ds('newds') shr reuse'
+          if tvol = null
+             then atvol = null
+             else atvol = 'vol('tvol')'
+          if fvol = null
+             then afvol = null
+             else afvol = 'vol('fvol')'
+          'alloc f(olddd) ds('oldds') shr reuse' afvol
+          'alloc f(newdd) ds('newds') shr reuse' atvol
           'alloc f(outdd) new spa(15,15) tr reuse' ,
             'recfm(v b) lrecl(125) blksize(0) unit(sysda)'
           Address ISPexec ,
@@ -996,7 +1080,8 @@ Refresh:
           if csel = 'CS' then do
             if pos('Not in',cr) > 0 then do
               zerrsm   = 'Not Applicable.'
-    zerrlm   = 'Can not compare when one library does not have the member.'
+              zerrlm   = 'Can not compare when one library does',
+                'not have the member.'
               'Setmsg Msg(isrz002)'
             end
             else do
@@ -1050,19 +1135,7 @@ Refresh:
 Done:
   if toid /= 'TOID' then 'lmfree dataid('toid')'
   if fromid /= 'FROMID' then 'lmfree dataid('fromid')'
-  if load_info /= null then do
-    do until length(load_info) = 0
-      parse value load_info with dd libd load_info
-      if left(libd,6) = "ALTLIB" then do
-        if libd = "ALTLIBC" then lib = "CLIST"
-        else lib = "EXEC"
-        Address TSO,
-          "Altlib Deact Application("lib")"
-      end
-      "libdef" libd
-      address tso "free f("dd")"
-    end
-  end
+  rc = dropispf(load_info)
   Exit 0
 
 Check_Records:
@@ -1073,11 +1146,13 @@ Check_Records:
     else cr = cr', From has more records'
   return 1
 
-Get_Stats: Procedure Expose sysrecfm
-  arg statmem statpds
+Get_Stats: Procedure Expose sysrecfm null
+  arg statmem statpds statvol
   statpds = strip(statpds)
   statmem = strip(statmem)
-  "LMINIT DATAID(statid) DATASET("statpds")"
+  if statvol /= null
+     then statvol = 'VOLUME('statvol')'
+  "LMINIT DATAID(statid) DATASET("statpds")" statvol
   "LMQUERY Dataid("statid") DATASET(QDSN)"
   "LMOPEN DATAID("statid") OPTION(INPUT)"
   "LMMFIND Dataid("statid") MEMBER("statmem")" ,
@@ -1099,12 +1174,19 @@ Get_Stats: Procedure Expose sysrecfm
 Check_Delta:
   xcr = null
   oldds = fixup_dsn(frompds)
+  if fvol /= null
+     then finit = 'VOLUME('fvol')'
+     else finit = null
   parm  = fixup_dsn(topds)
-  parm = parm oldds 'check'
-  "LMINIT DATAID(dfrom) DATASET("frompds")"
+  if tvol /= null then
+     parm = parm 'VOL('tvol')'
+  parm = parm '/' oldds 'check'
+  "LMINIT DATAID(dfrom) DATASET("frompds")" finit
   "LMOPEN DATAID("dfrom") OPTION(INPUT)"
   'edit dataid('dfrom') member('mem') macro(zsyncm)' ,
     'parm(parm)'
+  "LMClose Dataid("dfrom")"
+  "LMFree Dataid("dfrom")"
   'vget (xcr)'
   if xcr = 'Delta' then do
     crf = 1
@@ -1115,8 +1197,6 @@ Check_Delta:
     cr = 'Identical - No ISPF Stats'
     crf = 0
   end
-  "LMClose Dataid("dfrom")"
-  "LMFree Dataid("dfrom")"
   return
 
 
@@ -1156,123 +1236,120 @@ Prompt:
     else ignore_stats = 0
     leave
   end
+  'vput (fvol tvol) shared'
   return
 
-  /* --------------------  rexx procedure  -------------------- *
-  * Name:      LoadISPF                                        *
-  *                                                            *
-  * Function:  Load ISPF elements that are inline in the       *
-  *            REXX source code.                               *
-  *                                                            *
-  * Syntax:    rc = loadispf()                                 *
-  *                                                            *
-  *            The inline ISPF resources are limited to        *
-  *            ISPF Messages, Panels, and Skeletons,           *
-  *                 CLISTs and EXECs are also supported.       *
-  *                                                            *
-  *            The inline resources must start in column 1     *
-  *            and use the following syntax:                   *
-  *                                                            *
-  *            >START    used to indicate the start of the     *
-  *                      inline data                           *
-  *                                                            *
-  *            >END    - used to indicate the end of the       *
-  *                      inline data                           *
-  *                                                            *
-  *            Each resource begins with a type record:        *
-  *            >type name                                      *
-  *               where type is CLIST, EXEC, MSG, PANEL, SKEL  *
-  *                     name is the name of the element        *
-  *                                                            *
-  * Sample usage:                                              *
-  *          -* rexx *-                                        *
-  *          load_info = loadispf()                            *
-  *          ... magic code happens here (your code) ...       *
-  *          Address ISPEXEC                                   *
-  *          do until length(load_info) = 0                    *
-  *             parse value load_info with dd libd load_info   *
-  *             if left(libd,6) = "ALTLIB" then do             *
-  *                if libd = "ALTLIBC" then lib = "CLIST"      *
-  *                                    else lib = "EXEC"       *
-  *                Address TSO,                                *
-  *                  "Altlib Deact Application("lib")"         *
-  *                end                                         *
-  *             else "libdef" libd                             *
-  *             address tso "free f("dd")"                     *
-  *             end                                            *
-  *          exit                                              *
-  *          >Start inline elements                            *
-  *          >Panel panel1                                     *
-  *          ...                                               *
-  *          >Msg msg1                                         *
-  *          ...                                               *
-  *          >End of inline elements                           *
-  *                                                            *
-  * Returns:   the list of ddnames allocated for use along     *
-  *            with the libdef's performed or altlib           *
-  *                                                            *
-  *            format is ddname libdef ddname libdef ...       *
-  *                   libdef may be altlibc or altlibe         *
-  *                   for altlib clist or altlib exec          *
-  *                                                            *
-  * Notes:     Entire routine must be included with REXX       *
-  *            exec - inline with the code.                    *
-  *                                                            *
-  * Comments:  The entire rexx program is processed from the   *
-  *            last record to the first to find the >START     *
-  *            record at which point all records from that     *
-  *            point on are processed until the >END           *
-  *            statement or the end of the program is found.   *
-  *                                                            *
-  *            It is *strongly* suggested that the inline      *
-  *            elements be at the very end of your code so     *
-  *            that the search for them is faster.             *
-  *                                                            *
-  *            Inline ISPTLIB or ISPLLIB were not supported    *
-  *            because the values for these would have to be   *
-  *            in hex.                                         *
-  *                                                            *
-  * Author:    Lionel B. Dyck                                  *
-  *                                                            *
-  * History:                                                   *
-  *            12/09/16 - update for add_it routine            *
-  *            05/10/16 - correction for clist and exec        *
-  *            04/19/16 - bug correction                       *
-  *            06/04/04 - Enhancements for speed               *
-  *            08/05/02 - Creation                             *
-  *                                                            *
-  * ---------------------------------------------------------- *
-  * Disclaimer: There is no warranty, either explicit or       *
-  * implied with this code. Use it at your own risk as there   *
-  * is no recourse from either the author or his employeer.    *
-  * ---------------------------------------------------------- */
+/* --------------------  rexx procedure  -------------------- *
+ * Name:      LoadISPF                                        *
+ *                                                            *
+ * Function:  Load ISPF elements that are inline in the       *
+ *            REXX source code.                               *
+ *                                                            *
+ * Syntax:    load_info = loadispf()                          *
+ *            rc = dropispf(load_info)                        *
+ *                                                            *
+ *            *** Note that dropispf is a routine at the      *
+ *            *** bottom of this exec.                        *
+ *                                                            *
+ *            The inline ISPF resources are limited to        *
+ *            ISPF Messages, Panels, and Skeletons,           *
+ *                 CLISTs and EXECs are also supported.       *
+ *                                                            *
+ *            The inline resources must start in column 1     *
+ *            and use the following syntax:                   *
+ *                                                            *
+ *            >START    used to indicate the start of the     *
+ *                      inline data                           *
+ *                                                            *
+ *            >END    - used to indicate the end of the       *
+ *                      inline data                           *
+ *                                                            *
+ *            Each resource begins with a type record:        *
+ *            >type name                                      *
+ *               where type is CLIST, EXEC, MSG, PANEL, SKEL  *
+ *                     name is the name of the element        *
+ *                                                            *
+ * Sample usage:                                              *
+ *          -* rexx *-                                        *
+ *          load_info = loadispf()                            *
+ *          ... magic code happens here (your code) ...       *
+ *          rc = dropispf(load_info)                          *
+ *          exit                                              *
+ *          >Start inline elements                            *
+ *          >Panel panel1                                     *
+ *          ...                                               *
+ *          >Msg msg1                                         *
+ *          ...                                               *
+ *          >End of inline elements                           *
+ *                                                            *
+ * Returns:   the list of ddnames allocated for use along     *
+ *            with the libdef's performed or altlib           *
+ *                                                            *
+ *            format is ddname libdef ddname libdef ...       *
+ *                   libdef may be altlibc or altlibe         *
+ *                   for altlib clist or altlib exec          *
+ *                                                            *
+ * Notes:     Entire routine must be included with REXX       *
+ *            exec - inline with the code.                    *
+ *                                                            *
+ * Comments:  The entire rexx program is processed from the   *
+ *            last record to the first to find the >START     *
+ *            record at which point all records from that     *
+ *            point on are processed until the >END           *
+ *            statement or the end of the program is found.   *
+ *                                                            *
+ *            It is *strongly* suggested that the inline      *
+ *            elements be at the very end of your code so     *
+ *            that the search for them is faster.             *
+ *                                                            *
+ *            Inline ISPTLIB or ISPLLIB were not supported    *
+ *            because the values for these would have to be   *
+ *            in hex.                                         *
+ *                                                            *
+ * Author:    Lionel B. Dyck                                  *
+ *                                                            *
+ * History:                                                   *
+ *            01/09/19 - Include DROPISPF routine             *
+ *            08/29/17 - Fixup static values that were vars   *
+ *            05/31/17 - Change default directory count       *
+ *            12/09/16 - update for add_it routine            *
+ *            05/10/16 - correction for clist and exec        *
+ *            04/19/16 - bug correction                       *
+ *            06/04/04 - Enhancements for speed               *
+ *            08/05/02 - Creation                             *
+ *                                                            *
+ * ---------------------------------------------------------- *
+ * Disclaimer: There is no warranty, either explicit or       *
+ * implied with this code. Use it at your own risk as there   *
+ * is no recourse from either the author or his employeer.    *
+ * ---------------------------------------------------------- */
 LoadISPF: Procedure
 
   parse value "" with null kmsg kpanel kskel first returns ,
     kclist kexec
-  /* ------------------------------------------------------- *
-  * Find the InLine ISPF Elements and load them into a stem *
-  * variable.                                               *
-  *                                                         *
-  * Elements keyword syntax:                                *
-  * >START - start of inline data                           *
-  * >CLIST name                                             *
-  * >EXEC name                                              *
-  * >MSG name                                               *
-  * >PANEL name                                             *
-  * >SKEL name                                              *
-  * >END   - end of all inline data (optional if last)      *
-  * ------------------------------------------------------- */
+/* ------------------------------------------------------- *
+ * Find the InLine ISPF Elements and load them into a stem *
+ * variable.                                               *
+ *                                                         *
+ * Elements keyword syntax:                                *
+ * >START - start of inline data                           *
+ * >CLIST name                                             *
+ * >EXEC name                                              *
+ * >MSG name                                               *
+ * >PANEL name                                             *
+ * >SKEL name                                              *
+ * >END   - end of all inline data (optional if last)      *
+ * ------------------------------------------------------- */
   last_line = sourceline()
   do i = last_line to 1 by -1
     line = sourceline(i)
     if translate(left(line,6)) = ">START " then leave
   end
   rec = 0
-  /* --------------------------------------------------- *
-  * Flag types of ISPF resources by testing each record *
-  * then add each record to the data. stem variable.    *
-  * --------------------------------------------------- */
+/* --------------------------------------------------- *
+ * Flag types of ISPF resources by testing each record *
+ * then add each record to the data. stem variable.    *
+ * --------------------------------------------------- */
   do j = i+1 to last_line
     line = sourceline(j)
     if translate(left(line,5)) = ">END "   then leave
@@ -1285,22 +1362,22 @@ LoadISPF: Procedure
     data.rec = line
   end
 
-  /* ----------------------------------------------------- *
-  * Now create the Library and Load the Member(s)         *
-  * ----------------------------------------------------- */
+/* ----------------------------------------------------- *
+ * Now create the Library and Load the Member(s)         *
+ * ----------------------------------------------------- */
   Address ISPExec
-  /* ----------------------------- *
-  * Assign dynamic random ddnames *
-  * ----------------------------- */
+/* ----------------------------- *
+ * Assign dynamic random ddnames *
+ * ----------------------------- */
   clistdd = "lc"random(999)
   execdd  = "le"random(999)
   msgdd   = "lm"random(999)
   paneldd = "lp"random(999)
   skeldd  = "ls"random(999)
 
-  /* ---------------------------------------- *
-  *  LmInit and LmOpen each resource library *
-  * ---------------------------------------- */
+/* ---------------------------------------- *
+ *  LmInit and LmOpen each resource library *
+ * ---------------------------------------- */
   if kclist <> null then do
     call alloc_dd clistdd
     "Lminit dataid(clist) ddname("clistdd")"
@@ -1332,9 +1409,9 @@ LoadISPF: Procedure
     returns = strip(returns skeldd 'ISPSLIB')
   end
 
-  /* ----------------------------------------------- *
-  * Process all records in the data. stem variable. *
-  * ----------------------------------------------- */
+/* ----------------------------------------------- *
+ * Process all records in the data. stem variable. *
+ * ----------------------------------------------- */
   do i = 1 to rec
     record = data.i
     recordu = translate(record)
@@ -1374,7 +1451,7 @@ LoadISPF: Procedure
       parse value record with x name
       iterate
     end
-    /* --------------------------------------------*
+   /* --------------------------------------------*
     * Put the record into the appropriate library *
     * based on the record type.                   *
     * ------------------------------------------- */
@@ -1394,13 +1471,14 @@ LoadISPF: Procedure
       When type = "Skel" then
       "LmPut dataid("skel") MODE(INVAR)" ,
         "DataLoc(record) DataLen(80)"
+      Otherwise nop
     end
   end
   if type <> null then call add_it
-  /* ---------------------------------------------------- *
-  * Processing completed - now lmfree the allocation and *
-  * Libdef the library.                                  *
-  * ---------------------------------------------------- */
+/* ---------------------------------------------------- *
+ * Processing completed - now lmfree the allocation and *
+ * Libdef the library.                                  *
+ * ---------------------------------------------------- */
   if kclist <> null then do
     Address TSO,
       "Altlib Act Application(Clist) File("clistdd")"
@@ -1425,10 +1503,10 @@ LoadISPF: Procedure
   end
   return returns
 
-  /* --------------------------- *
-  * Add the Member using LmmAdd *
-  * based upon type of resource *
-  * --------------------------- */
+/* --------------------------- *
+ * Add the Member using LmmAdd *
+ * based upon type of resource *
+ * --------------------------- */
 Add_It:
   Select
     When type = "Clist" then
@@ -1446,19 +1524,48 @@ Add_It:
   type = null
   return
 
-  /* ------------------------------ *
-  * ALlocate the temp ispf library *
-  * ------------------------------ */
+/* ------------------------------ *
+ * ALlocate the temp ispf library *
+ * ------------------------------ */
 Alloc_DD:
   arg dd
   Address TSO
   if pos(left(dd,2),"lc le") > 0 then
-  "Alloc f("dd") unit(sysda) spa(5,5) dir(4)",
+  "Alloc f("dd") unit(sysda) spa(5,5) dir(5)",
     "recfm(v b) lrecl(255) blksize(32760)"
   else
-  "Alloc f("dd") unit(sysda) spa(5,5) dir(4)",
+  "Alloc f("dd") unit(sysda) spa(5,5) dir(5)",
     "recfm(f b) lrecl(80) blksize(23440)"
   return
+
+/* --------------------  rexx procedure  -------------------- *
+ * Name:      DropISPF                                        *
+ *                                                            *
+ * Function:  Remove ISPF LIBDEF's and deactivate ALTLIB's    *
+ *            that were created by the LoadISPF function.     *
+ *                                                            *
+ * Syntax:    rc = dropispf(load_info)                        *
+ *                                                            *
+ * Author:    Janko                                           *
+ *                                                            *
+ * History:                                                   *
+ *            12/05/18 - Creation                             *
+ * ---------------------------------------------------------- */
+DropISPF: Procedure
+  arg load_info
+  Address ISPEXEC
+  do until length(load_info) = 0
+    parse value load_info with dd libd load_info
+    if left(libd,6) = "ALTLIB" then do
+      if libd = "ALTLIBC" then lib = "CLIST"
+      else lib = "EXEC"
+      Address TSO,
+        "Altlib Deact Application("lib")"
+    end
+    else "libdef" libd
+    address tso "free f("dd")"
+  end
+  return 0
 
   /* --------------------------- *
   | The start for inline panels |
@@ -1511,10 +1618,9 @@ $
 @
 @  @B$      - Browse the From member
 $  @BT$     - Browse the To member
-$  @C$      - ISPF Edit Compare - alias@CF$
+$  @C$      - ISPF Edit Compare
 $  @CD$     - SuperC Compare
 $  @CS$     - SuperC Compare and View
-$  @CT$     - ISPF Edit Compare To member
 $  @E$      - Edit the From member
 $  @ET$     - Edit the To member
 $  @I$      - ISPF Stats
@@ -1522,6 +1628,7 @@ $  @S$or@/$ - Display Selection prompt
 $  @X$      - Exclude the member
 $  @Z$      - Copy member
 $  @=$      - Repeat previous selection
+$
 $
 $ \ \ (press@ENTER$to continue) \ \
 )INIT
@@ -1598,16 +1705,16 @@ $ \ \ (press@ENTER$to continue) \ \
 >Panel zSync
 )Attr Default(@+_)
 $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
-+ type(text) intens(low) Color(Green)
++ type(text) intens(low) Color(Green) Skip(on)
 # type(output) intens(low) hilite(reverse)
 _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )Body expand(\\)
 @-\-\+zSync Dataset Prompt#zver@\-\-
 @Command ===>_zcmd
 +
-+From PDS Dataset:  $frompds                                       +
-+To   PDS Dataset:  $topds                                         +
-+Member Pattern:    $mempat  +   (not supported when RECFM=U)
++From PDS Dataset:$frompds                                       +Vol:$fvol  +
++To   PDS Dataset:$topds                                         +Vol:$tvol  +
++Member Pattern:  $mempat  +   (not supported when RECFM=U)
 +Ignore ISPF Stats: $z+   Yes or No
 +Display Delta Only:$z+   Yes or No
 +
@@ -1626,7 +1733,6 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 + \ \ (press@ENTER+to Continue@PF3+to Cancel) \ \
 )Init
  .zvars = '(igstats donly)'
- vget (frompds topds) profile
  if (&igstats = &z)
      &igstats = 'N'
  if (&donly   = &z)
@@ -1665,7 +1771,7 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 @ type(text  ) intens(high)  caps(off) just(left )
 $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 + type(text) intens(low) color(Green)
-)Body window(60,18) expand(\\)
+)Body window(56,17) expand(\\)
 %-\-\+zSync Selection Prompt%\-\-
 %Option ===>_zcmd
 +
@@ -1673,10 +1779,9 @@ $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
 +
 + @B+  - Browse the From member
 + @BT+ - Browse the To member
-+ @C+  - Compare the members using ISPF Edit Compare (@CF+)
++ @C+  - Compare the members using ISPF Edit Compare
 + @CD+ - Compare members using SuperC
 + @CS+ - Compare members using SuperC and View Results
-+ @CT+ - Compare the To member to the From using ISPF Edit
 + @E+  - Edit the From member
 + @ET+ - Edit the To member
 + @I+  - Display ISPF Stats
@@ -1741,17 +1846,17 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
 )Attr Default(%+_)
   @ type(output) intens(high) just(left ) caps(off)
   # type(output) intens(low)  just(left ) caps(off) Color(Green)
-  $ type( input) intens(high) caps(on ) just(left ) hilite(uscore)
+  $ type(output) intens(high) caps(off) just(left ) color(red)
   + type(text) intens(low) Color(Green)
   _ type(input) intens(high) caps(on) hilite(uscore)
 )Body  expand(\\)
 %-\-\+zSync Member List#zver%\-\-
 %Command ===>_zcmd                                            %Scroll ===>_amt +
 +
-%   From:#frompds                                          #flrecl
-%     To:@topds                                            @tlrecl
-%Pattern:#mempat                                           #trwarn
-+
+%   From:#frompds                                          +Vol:#fvol
+%     To:@topds                                            +Vol:@tvol
+%Pattern:#mempat
++        $trwarn
 % Sel   Member    State
 )Model
  +_z + #z        @z
@@ -1761,7 +1866,7 @@ _   TYPE(INPUT) INTENS(HIGH) CAPS(ON) JUST(LEFT) HILITE(USCORE)
  if (&amt = &z)
      &amt  = csr
 )Proc
- ver (&csel,list,I,X,C,B,BT,E,ET,CF,CT,CD,CS,/,S,Z,'=')
+ ver (&csel,list,I,X,C,B,BT,E,ET,CD,CS,/,S,Z,'=')
  &amt = trans(trunc(&amt,1),H,HALF,C,CSR,P,PAGE,*,*)
 )Field
  Field(cr) ind(mpind,'<>') len(255) scale(lr1sc)
@@ -1773,11 +1878,22 @@ ZS001 'zSync Command'
 /* rexx */
  Address ISREdit
  'macro (parm)'
- parse value parm with parm fromds opt
+ parse value parm with parm '/' fromds opt
  xcr = ''
  'compare' parm 'x'
-  msg = "Comparing" fromds "to" parm
- 'line_after ' 0 '= msgline "'msg'"'
+ '(dataset) = dataset'
+ '(member) = member'
+ address ispexec 'vget (tvol fvol) shared'
+ if fvol /= ''
+    then fvol = 'VOL('fvol') '
+ msg = 'Comparing' dataset'('member')' fvol'to' parm
+ if length(msg) > 70 then do
+      msg = 'to' parm
+     'line_after ' 0 '= msgline "'msg'"'
+      msg = 'Comparing' dataset'('member')' fvol
+     'line_after ' 0 '= msgline "'msg'"'
+    end
+ else 'line_after ' 0 '= msgline "'msg'"'
  'locate label first'
  if rc = 0 then xcr = 'Delta'
  if rc > 0 then do
