@@ -1,5 +1,5 @@
   /* --------------------  rexx procedure  -------------------- */
-  zver = '5.0'
+  zver = '5.1'
   /* Name:      zSync                                           |
   |                                                            |
   | Function:  Copy New and Updated PDS members based on       |
@@ -83,6 +83,9 @@
   | Author:    Lionel B. Dyck                                  |
   |                                                            |
   | History:  (most recent on top)                             |
+  |            07/19/24 - Version 5.1                          |
+  |                     - Correct volser for from compare in   |
+  |                       edit compare macro                   |
   |            06/15/24 - Version 5.0                          |
   |                     - Update loadispf/dropispf routines    |
   |                     - Improve color for trunc warning      |
@@ -1883,14 +1886,13 @@ ZS001 'zSync Command'
  'compare' parm 'x'
  '(dataset) = dataset'
  '(member) = member'
- address ispexec 'vget (tvol fvol) shared'
- if fvol /= ''
-    then fvol = 'VOL('fvol') '
- msg = 'Comparing' dataset'('member')' fvol'to' parm
+ '(fvol)   = volume'
+ fvol = 'Vol('fvol') '
+ msg = "Comparing '"dataset"("member")'" fvol'to' parm
  if length(msg) > 70 then do
       msg = 'to' parm
      'line_after ' 0 '= msgline "'msg'"'
-      msg = 'Comparing' dataset'('member')' fvol
+      msg = "Comparing '"dataset"("member")'" fvol
      'line_after ' 0 '= msgline "'msg'"'
     end
  else 'line_after ' 0 '= msgline "'msg'"'
